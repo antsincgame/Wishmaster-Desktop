@@ -53,13 +53,5 @@
         "type": "downloadBootstrapper"
       }
     }
-  },
-  "plugins": {
-    "fs": {
-      "scope": ["$HOME/**", "$APPDATA/**", "$DOWNLOAD/**"]
-    },
-    "shell": {
-      "open": true
-    }
   }
 }

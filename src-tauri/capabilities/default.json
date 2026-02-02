@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for Wishmaster Desktop",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:webview:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-exists",
+    "shell:default",
+    "shell:allow-open"
+  ]
+}
