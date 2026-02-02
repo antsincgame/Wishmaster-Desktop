@@ -10,6 +10,14 @@ import {
 import { useStore } from '../store'
 import clsx from 'clsx'
 
+// Constant array - extracted outside component to prevent recreation on each render
+const NAV_ITEMS = [
+  { path: '/', icon: MessageSquare, label: 'Чат' },
+  { path: '/models', icon: Box, label: 'Модели' },
+  { path: '/voice-clone', icon: Mic, label: 'Клон голоса' },
+  { path: '/settings', icon: Settings, label: 'Настройки' },
+] as const
+
 export function Sidebar() {
   const location = useLocation()
   const { 
@@ -20,13 +28,6 @@ export function Sidebar() {
     deleteSession,
     currentModel 
   } = useStore()
-
-  const navItems = [
-    { path: '/', icon: MessageSquare, label: 'Чат' },
-    { path: '/models', icon: Box, label: 'Модели' },
-    { path: '/voice-clone', icon: Mic, label: 'Клон голоса' },
-    { path: '/settings', icon: Settings, label: 'Настройки' },
-  ]
 
   return (
     <aside className="w-72 bg-cyber-surface border-r border-cyber-border flex flex-col">
@@ -42,7 +43,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="p-2">
-        {navItems.map(item => (
+        {NAV_ITEMS.map(item => (
           <Link
             key={item.path}
             to={item.path}

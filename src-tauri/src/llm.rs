@@ -79,14 +79,31 @@ where
                    Чем могу помочь?";
     
     // Stream tokens
+    let mut accumulated = String::new();
     for word in response.split_whitespace() {
         let token = format!("{} ", word);
+        accumulated.push_str(&token);
+        
+        // Check for stop sequences
+        let mut should_stop = false;
+        for stop in STOP_SEQUENCES {
+            if accumulated.contains(stop) {
+                accumulated = accumulated.replace(stop, "");
+                should_stop = true;
+                break;
+            }
+        }
         
         // Simulate generation speed
         std::thread::sleep(std::time::Duration::from_millis(50));
         
         if !callback(token) {
             println!("Generation stopped by user");
+            break;
+        }
+        
+        if should_stop {
+            println!("Stop sequence detected");
             break;
         }
     }

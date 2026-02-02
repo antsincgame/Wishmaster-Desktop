@@ -48,14 +48,24 @@ pub fn init(db_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn get_conn() -> std::sync::MutexGuard<'static, Connection> {
-    DB.get().expect("Database not initialized").lock().unwrap()
+fn get_conn() -> Result<std::sync::MutexGuard<'static, Connection>> {
+    DB.get()
+        .ok_or_else(|| rusqlite::Error::InvalidQuery)?
+        .lock()
+        .map_err(|_| rusqlite::Error::InvalidQuery)
+}
+
+fn get_timestamp() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 // ==================== Settings ====================
 
 pub fn get_settings() -> Result<Settings> {
-    let conn = get_conn();
+    let conn = get_conn()?;
     let mut settings = Settings::default();
     
     let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
@@ -82,7 +92,7 @@ pub fn get_settings() -> Result<Settings> {
 }
 
 pub fn save_settings(settings: &Settings) -> Result<()> {
-    let conn = get_conn();
+    let conn = get_conn()?;
     
     let pairs = vec![
         ("temperature", settings.temperature.to_string()),
@@ -108,7 +118,7 @@ pub fn save_settings(settings: &Settings) -> Result<()> {
 // ==================== Sessions ====================
 
 pub fn get_sessions() -> Result<Vec<Session>> {
-    let conn = get_conn();
+    let conn = get_conn()?;
     let mut stmt = conn.prepare(
         "SELECT id, title, created_at, message_count FROM sessions ORDER BY created_at DESC"
     )?;
@@ -126,11 +136,8 @@ pub fn get_sessions() -> Result<Vec<Session>> {
 }
 
 pub fn create_session(title: &str) -> Result<i64> {
-    let conn = get_conn();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64;
+    let conn = get_conn()?;
+    let now = get_timestamp();
     
     conn.execute(
         "INSERT INTO sessions (title, created_at, message_count) VALUES (?1, ?2, 0)",
@@ -141,7 +148,7 @@ pub fn create_session(title: &str) -> Result<i64> {
 }
 
 pub fn delete_session(session_id: i64) -> Result<()> {
-    let conn = get_conn();
+    let conn = get_conn()?;
     conn.execute("DELETE FROM sessions WHERE id = ?1", params![session_id])?;
     Ok(())
 }
@@ -149,7 +156,7 @@ pub fn delete_session(session_id: i64) -> Result<()> {
 // ==================== Messages ====================
 
 pub fn get_messages(session_id: i64) -> Result<Vec<Message>> {
-    let conn = get_conn();
+    let conn = get_conn()?;
     let mut stmt = conn.prepare(
         "SELECT id, content, is_user, timestamp FROM messages WHERE session_id = ?1 ORDER BY timestamp ASC"
     )?;
@@ -167,11 +174,8 @@ pub fn get_messages(session_id: i64) -> Result<Vec<Message>> {
 }
 
 pub fn insert_message(session_id: i64, content: &str, is_user: bool) -> Result<i64> {
-    let conn = get_conn();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64;
+    let conn = get_conn()?;
+    let now = get_timestamp();
     
     conn.execute(
         "INSERT INTO messages (session_id, content, is_user, timestamp) VALUES (?1, ?2, ?3, ?4)",
@@ -190,7 +194,7 @@ pub fn insert_message(session_id: i64, content: &str, is_user: bool) -> Result<i
 // ==================== Voice Profiles ====================
 
 pub fn get_voice_profiles() -> Result<Vec<VoiceProfile>> {
-    let conn = get_conn();
+    let conn = get_conn()?;
     let mut stmt = conn.prepare(
         "SELECT id, name, audio_path, created_at FROM voice_profiles ORDER BY created_at DESC"
     )?;
@@ -208,11 +212,8 @@ pub fn get_voice_profiles() -> Result<Vec<VoiceProfile>> {
 }
 
 pub fn create_voice_profile(name: &str, audio_path: &str) -> Result<i64> {
-    let conn = get_conn();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64;
+    let conn = get_conn()?;
+    let now = get_timestamp();
     
     conn.execute(
         "INSERT INTO voice_profiles (name, audio_path, created_at) VALUES (?1, ?2, ?3)",
@@ -223,7 +224,7 @@ pub fn create_voice_profile(name: &str, audio_path: &str) -> Result<i64> {
 }
 
 pub fn delete_voice_profile(id: i64) -> Result<()> {
-    let conn = get_conn();
+    let conn = get_conn()?;
     conn.execute("DELETE FROM voice_profiles WHERE id = ?1", params![id])?;
     Ok(())
 }

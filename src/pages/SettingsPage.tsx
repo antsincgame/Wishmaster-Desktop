@@ -1,16 +1,17 @@
 import { useStore } from '../store'
 import clsx from 'clsx'
 
+// Constant array - extracted outside component to prevent recreation on each render
+const ACCENT_COLORS = [
+  { id: 'cyan', label: 'Cyan', color: '#00ffff' },
+  { id: 'magenta', label: 'Magenta', color: '#ff0080' },
+  { id: 'green', label: 'Green', color: '#00ff41' },
+  { id: 'yellow', label: 'Yellow', color: '#ffff00' },
+  { id: 'purple', label: 'Purple', color: '#bf00ff' },
+] as const
+
 export function SettingsPage() {
   const { settings, saveSettings } = useStore()
-
-  const accentColors = [
-    { id: 'cyan', label: 'Cyan', color: '#00ffff' },
-    { id: 'magenta', label: 'Magenta', color: '#ff0080' },
-    { id: 'green', label: 'Green', color: '#00ff41' },
-    { id: 'yellow', label: 'Yellow', color: '#ffff00' },
-    { id: 'purple', label: 'Purple', color: '#bf00ff' },
-  ]
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -202,7 +203,7 @@ export function SettingsPage() {
             <div>
               <label className="block text-sm text-gray-400 mb-2">Акцентный цвет</label>
               <div className="flex gap-2">
-                {accentColors.map((c) => (
+                {ACCENT_COLORS.map((c) => (
                   <button
                     key={c.id}
                     onClick={() => saveSettings({ accentColor: c.id })}

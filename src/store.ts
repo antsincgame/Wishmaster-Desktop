@@ -86,9 +86,10 @@ interface AppState {
   loadVoiceProfiles: () => Promise<void>
   createVoiceProfile: (name: string, audioPath: string) => Promise<void>
   deleteVoiceProfile: (id: number) => Promise<void>
+  selectVoice: (profile: VoiceProfile | null) => void
   startRecording: () => Promise<void>
   stopRecording: () => Promise<string>
-  speak: (text: string) => Promise<void>
+  speak: (text: string, voiceId?: number) => Promise<void>
   stopSpeaking: () => void
 }
 
@@ -335,10 +336,18 @@ export const useStore = create<AppState>((set, get) => ({
   deleteVoiceProfile: async (id) => {
     try {
       await invoke('delete_voice_profile', { id })
+      // If deleted profile was selected, clear selection
+      if (get().currentVoice?.id === id) {
+        set({ currentVoice: null })
+      }
       await get().loadVoiceProfiles()
     } catch (e) {
       console.error('Failed to delete voice profile:', e)
     }
+  },
+
+  selectVoice: (profile) => {
+    set({ currentVoice: profile })
   },
 
   startRecording: async () => {
@@ -362,11 +371,12 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  speak: async (text) => {
+  speak: async (text, voiceId) => {
     set({ isSpeaking: true })
     try {
-      const voiceId = get().currentVoice?.id
-      await invoke('speak', { text, voiceId })
+      // Use passed voiceId or fall back to currentVoice
+      const id = voiceId ?? get().currentVoice?.id
+      await invoke('speak', { text, voiceId: id })
     } catch (e) {
       console.error('Failed to speak:', e)
     } finally {

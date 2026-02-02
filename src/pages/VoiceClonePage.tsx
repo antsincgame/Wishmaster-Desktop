@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { Mic, Square, Play, Pause, Trash2, Plus, Upload, Volume2 } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Plus, Volume2, Check } from 'lucide-react'
 import { useStore } from '../store'
 import clsx from 'clsx'
 
@@ -10,6 +10,7 @@ export function VoiceClonePage() {
     loadVoiceProfiles,
     createVoiceProfile,
     deleteVoiceProfile,
+    selectVoice,
     speak,
     isSpeaking,
     stopSpeaking
@@ -75,11 +76,11 @@ export function VoiceClonePage() {
     }
   }
 
-  const handleTestVoice = async (voiceId?: number) => {
+  const handleTestVoice = async (voiceId: number) => {
     if (isSpeaking) {
       stopSpeaking()
     } else {
-      await speak(testText)
+      await speak(testText, voiceId)
     }
   }
 
@@ -232,21 +233,34 @@ export function VoiceClonePage() {
                 <div
                   key={profile.id}
                   className={clsx(
-                    'p-4 rounded-xl border transition-all',
+                    'p-4 rounded-xl border transition-all cursor-pointer',
                     currentVoice?.id === profile.id
-                      ? 'bg-neon-magenta/10 border-neon-magenta/50'
-                      : 'bg-cyber-surface border-cyber-border'
+                      ? 'bg-neon-magenta/10 border-neon-magenta/50 glow-magenta'
+                      : 'bg-cyber-surface border-cyber-border hover:border-neon-cyan/30'
                   )}
+                  onClick={() => selectVoice(currentVoice?.id === profile.id ? null : profile)}
                 >
                   <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-white">{profile.name}</h4>
-                      <p className="text-xs text-gray-500">
-                        Создан: {new Date(profile.createdAt).toLocaleDateString('ru-RU')}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      {/* Selection indicator */}
+                      <div className={clsx(
+                        'w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all',
+                        currentVoice?.id === profile.id
+                          ? 'bg-neon-magenta border-neon-magenta'
+                          : 'border-gray-600'
+                      )}>
+                        {currentVoice?.id === profile.id && <Check size={14} className="text-white" />}
+                      </div>
+                      
+                      <div>
+                        <h4 className="font-bold text-white">{profile.name}</h4>
+                        <p className="text-xs text-gray-500">
+                          Создан: {new Date(profile.createdAt).toLocaleDateString('ru-RU')}
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => handleTestVoice(profile.id)}
                         className={clsx(

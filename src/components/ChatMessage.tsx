@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import { Message } from '../store'
 import clsx from 'clsx'
 
@@ -5,7 +6,14 @@ interface Props {
   message: Message
 }
 
-export function ChatMessage({ message }: Props) {
+export const ChatMessage = memo(function ChatMessage({ message }: Props) {
+  // Memoize date formatting to avoid recalculation on every render
+  const formattedTime = useMemo(() => 
+    new Date(message.timestamp).toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }), [message.timestamp]
+  )
   return (
     <div className={clsx(
       'flex',
@@ -24,15 +32,12 @@ export function ChatMessage({ message }: Props) {
           'text-[10px] mt-1',
           message.isUser ? 'text-neon-magenta/50' : 'text-neon-cyan/50'
         )}>
-          {new Date(message.timestamp).toLocaleTimeString('ru-RU', {
-            hour: '2-digit',
-            minute: '2-digit'
-          })}
+          {formattedTime}
         </p>
       </div>
     </div>
   )
-}
+})
 
 export function TypingIndicator() {
   return (
