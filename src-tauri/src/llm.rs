@@ -4,7 +4,6 @@ use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::token::data_array::LlamaTokenDataArray;
-use llama_cpp_2::context::LlamaContext;
 use once_cell::sync::OnceCell;
 use std::num::NonZeroU32;
 use std::sync::Mutex;
@@ -166,7 +165,7 @@ where
         
         // Sample - use greedy for simplicity (temperature ignored for now)
         // TODO: implement proper temperature sampling when API stabilizes
-        let new_token = candidates_p.sample_token_greedy(None);
+        let new_token = candidates_p.sample_token_greedy();
         
         // Check for EOS
         if model.is_eog_token(new_token) {
