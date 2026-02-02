@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 
 // Skip component tests due to jsdom compatibility issues
 // These tests work in a real browser environment
