@@ -19,7 +19,7 @@ export function ModelsPage() {
 
   useEffect(() => {
     loadModels()
-  }, [])
+  }, [loadModels])
 
   const handleLoadModel = async (path: string) => {
     setLoadingModel(path)
@@ -33,13 +33,18 @@ export function ModelsPage() {
   }
 
   const handleAddModel = async () => {
-    const file = await open({
-      multiple: false,
-      filters: [{ name: 'GGUF Models', extensions: ['gguf'] }]
-    })
-    
-    if (file) {
-      await loadModels()
+    try {
+      const file = await open({
+        multiple: false,
+        filters: [{ name: 'GGUF Models', extensions: ['gguf'] }]
+      })
+      
+      if (file) {
+        await loadModels()
+      }
+    } catch (e) {
+      // User cancelled dialog - this is expected behavior
+      console.debug('File dialog cancelled:', e)
     }
   }
 

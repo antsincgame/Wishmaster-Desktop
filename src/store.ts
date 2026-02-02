@@ -90,7 +90,7 @@ interface AppState {
   startRecording: () => Promise<void>
   stopRecording: () => Promise<string>
   speak: (text: string, voiceId?: number) => Promise<void>
-  stopSpeaking: () => void
+  stopSpeaking: () => Promise<void>
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -268,8 +268,12 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  stopGeneration: () => {
-    invoke('stop_generation')
+  stopGeneration: async () => {
+    try {
+      await invoke('stop_generation')
+    } catch (e) {
+      console.error('Failed to stop generation:', e)
+    }
   },
 
   appendToken: (token) => {
@@ -301,7 +305,7 @@ export const useStore = create<AppState>((set, get) => ({
           sessionId: currentSessionId,
           content: assistantMsg.content,
           isUser: false,
-        })
+        }).catch(e => console.error('Failed to save message:', e))
       }
 
       // Auto-speak if enabled
@@ -384,8 +388,13 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  stopSpeaking: () => {
-    invoke('stop_speaking')
-    set({ isSpeaking: false })
+  stopSpeaking: async () => {
+    try {
+      await invoke('stop_speaking')
+    } catch (e) {
+      console.error('Failed to stop speaking:', e)
+    } finally {
+      set({ isSpeaking: false })
+    }
   },
 }))

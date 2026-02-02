@@ -217,15 +217,21 @@ pub async fn generate(
         }
         
         // Emit token to frontend
-        let _ = app.emit("llm-token", token);
+        if let Err(e) = app.emit("llm-token", token) {
+            eprintln!("Failed to emit token: {}", e);
+        }
         true // Continue
     }) {
         Ok(_) => {
-            let _ = app.emit("llm-finished", ());
+            if let Err(e) = app.emit("llm-finished", ()) {
+                eprintln!("Failed to emit finished event: {}", e);
+            }
             Ok(())
         }
         Err(e) => {
-            let _ = app.emit("llm-finished", ());
+            if let Err(emit_err) = app.emit("llm-finished", ()) {
+                eprintln!("Failed to emit finished event: {}", emit_err);
+            }
             Err(e.to_string())
         }
     }

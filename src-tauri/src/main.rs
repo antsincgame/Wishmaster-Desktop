@@ -9,17 +9,35 @@ mod voice;
 use tauri::Manager;
 
 fn main() {
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Initialize database
-            let app_dir = app.path().app_data_dir().expect("Failed to get app dir");
-            std::fs::create_dir_all(&app_dir).ok();
+            let app_dir = match app.path().app_data_dir() {
+                Ok(dir) => dir,
+                Err(e) => {
+                    eprintln!("Failed to get app data directory: {}", e);
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "Failed to get app data directory"
+                    )));
+                }
+            };
+            
+            if let Err(e) = std::fs::create_dir_all(&app_dir) {
+                eprintln!("Warning: Failed to create app directory: {}", e);
+            }
             
             let db_path = app_dir.join("wishmaster.db");
-            database::init(&db_path).expect("Failed to init database");
+            if let Err(e) = database::init(&db_path) {
+                eprintln!("Failed to initialize database: {}", e);
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to initialize database: {}", e)
+                )));
+            }
             
             // Initialize LLM engine
             llm::init();
@@ -57,6 +75,10 @@ fn main() {
             commands::speak,
             commands::stop_speaking,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+    
+    if let Err(e) = result {
+        eprintln!("Application error: {}", e);
+        std::process::exit(1);
+    }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Mic, Square, Play, Pause, Trash2, Plus, Volume2, Check } from 'lucide-react'
 import { useStore } from '../store'
 import { formatDate } from '../utils'
@@ -22,17 +22,38 @@ export function VoiceClonePage() {
   const [newProfileName, setNewProfileName] = useState('')
   const [testText, setTestText] = useState('Привет! Это тест клонированного голоса.')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
 
+  // Load profiles on mount
   useEffect(() => {
     loadVoiceProfiles()
-  }, [])
+  }, [loadVoiceProfiles])
 
-  const startRecording = async () => {
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Stop recording if active
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop()
+      }
+      // Stop all tracks
+      streamRef.current?.getTracks().forEach(track => track.stop())
+      // Revoke object URL
+      if (recordedAudio) {
+        URL.revokeObjectURL(recordedAudio)
+      }
+    }
+  }, [recordedAudio])
+
+  const startRecording = useCallback(async () => {
+    setError(null)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
       chunksRef.current = []
@@ -45,45 +66,72 @@ export function VoiceClonePage() {
 
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        // Revoke previous URL if exists
+        if (recordedAudio) {
+          URL.revokeObjectURL(recordedAudio)
+        }
         const url = URL.createObjectURL(blob)
         setRecordedAudio(url)
+        // Stop all tracks
         stream.getTracks().forEach(track => track.stop())
+        streamRef.current = null
       }
 
       mediaRecorder.start()
       setIsRecording(true)
     } catch (e) {
       console.error('Failed to start recording:', e)
+      setError('Не удалось получить доступ к микрофону. Проверьте разрешения.')
     }
-  }
+  }, [recordedAudio])
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current) {
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop()
       setIsRecording(false)
     }
-  }
+  }, [])
 
-  const handleCreateProfile = async () => {
+  const clearRecording = useCallback(() => {
+    if (recordedAudio) {
+      URL.revokeObjectURL(recordedAudio)
+      setRecordedAudio(null)
+    }
+  }, [recordedAudio])
+
+  const handleCreateProfile = useCallback(async () => {
     if (!newProfileName.trim() || !recordedAudio) return
 
+    setError(null)
     try {
       await createVoiceProfile(newProfileName.trim(), recordedAudio)
       setNewProfileName('')
-      setRecordedAudio(null)
+      clearRecording()
       setShowCreateDialog(false)
     } catch (e) {
       console.error('Failed to create voice profile:', e)
+      setError('Не удалось создать голосовой профиль')
     }
-  }
+  }, [newProfileName, recordedAudio, createVoiceProfile, clearRecording])
 
-  const handleTestVoice = async (voiceId: number) => {
+  const handleTestVoice = useCallback(async (voiceId: number) => {
     if (isSpeaking) {
       stopSpeaking()
     } else {
-      await speak(testText, voiceId)
+      try {
+        await speak(testText, voiceId)
+      } catch (e) {
+        console.error('Failed to speak:', e)
+      }
     }
-  }
+  }, [isSpeaking, stopSpeaking, speak, testText])
+
+  const handleCloseDialog = useCallback(() => {
+    setShowCreateDialog(false)
+    clearRecording()
+    setNewProfileName('')
+    setError(null)
+  }, [clearRecording])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -96,6 +144,13 @@ export function VoiceClonePage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {/* Error message */}
+        {error && (
+          <div className="mb-4 p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400">
+            {error}
+          </div>
+        )}
+
         {/* Info box */}
         <div className="p-4 rounded-xl border border-neon-yellow/30 bg-neon-yellow/5 mb-6">
           <h3 className="text-sm font-bold text-neon-yellow mb-2">
@@ -172,7 +227,7 @@ export function VoiceClonePage() {
                   <div className="flex items-center gap-2">
                     <audio src={recordedAudio} controls className="h-10" />
                     <button
-                      onClick={() => setRecordedAudio(null)}
+                      onClick={clearRecording}
                       className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
                     >
                       <Trash2 size={16} />
@@ -203,11 +258,7 @@ export function VoiceClonePage() {
                 Создать профиль
               </button>
               <button
-                onClick={() => {
-                  setShowCreateDialog(false)
-                  setRecordedAudio(null)
-                  setNewProfileName('')
-                }}
+                onClick={handleCloseDialog}
                 className="px-4 py-2 rounded-lg border border-cyber-border text-gray-400 hover:text-white"
               >
                 Отмена

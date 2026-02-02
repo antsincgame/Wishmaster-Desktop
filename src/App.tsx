@@ -15,7 +15,7 @@ function App() {
     loadSettings()
     loadModels()
     loadSessions()
-  }, [])
+  }, [loadSettings, loadModels, loadSessions])
 
   return (
     <BrowserRouter>

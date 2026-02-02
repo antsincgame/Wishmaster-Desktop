@@ -44,8 +44,8 @@ export function ChatInput() {
     if (isRecording) {
       try {
         const result = await stopRecording()
-        if (result) {
-          setText(prev => prev + result)
+        if (result && typeof result === 'string' && result.trim()) {
+          setText(prev => prev + (prev ? ' ' : '') + result.trim())
         }
       } catch (e) {
         console.error('Voice recognition failed:', e)

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react'
-import { listen } from '@tauri-apps/api/event'
+import { useEffect, useRef, useCallback } from 'react'
+import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { ChatMessage, StreamingMessage, TypingIndicator } from '../components/ChatMessage'
 import { ChatInput } from '../components/ChatInput'
 import { useStore } from '../store'
@@ -17,19 +17,42 @@ export function ChatPage() {
     sessions
   } = useStore()
 
+  // Stable callback refs
+  const appendTokenRef = useRef(appendToken)
+  const finishGenerationRef = useRef(finishGeneration)
+  
+  // Update refs when functions change
+  useEffect(() => {
+    appendTokenRef.current = appendToken
+    finishGenerationRef.current = finishGeneration
+  }, [appendToken, finishGeneration])
+
   // Listen for token events from Rust backend
   useEffect(() => {
-    const unlisten = listen<string>('llm-token', (event) => {
-      appendToken(event.payload)
-    })
+    let tokenUnlisten: UnlistenFn | null = null
+    let finishUnlisten: UnlistenFn | null = null
+    let mounted = true
 
-    const unlistenFinish = listen('llm-finished', () => {
-      finishGeneration()
-    })
+    const setup = async () => {
+      tokenUnlisten = await listen<string>('llm-token', (event) => {
+        if (mounted) {
+          appendTokenRef.current(event.payload)
+        }
+      })
+
+      finishUnlisten = await listen('llm-finished', () => {
+        if (mounted) {
+          finishGenerationRef.current()
+        }
+      })
+    }
+
+    setup()
 
     return () => {
-      unlisten.then(fn => fn())
-      unlistenFinish.then(fn => fn())
+      mounted = false
+      tokenUnlisten?.()
+      finishUnlisten?.()
     }
   }, [])
 
@@ -43,7 +66,7 @@ export function ChatPage() {
     if (sessions.length === 0) {
       createSession()
     }
-  }, [sessions])
+  }, [sessions.length, createSession])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
