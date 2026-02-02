@@ -31,8 +31,8 @@ pub fn init() {
     let _ = MODEL_PATH.set(Mutex::new(None));
     let _ = CONTEXT_SIZE.set(Mutex::new(2048));
     
-    println!("LLM engine initialized (native llama.cpp)");
-    println!("llama.cpp backend ready");
+    println!("LLM engine initialized (native llama.cpp with CUDA)");
+    println!("llama.cpp backend ready - GPU acceleration enabled");
     let _ = backend; // Use backend to avoid warning
 }
 
@@ -47,8 +47,10 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
     // Get backend
     let backend = BACKEND.get().ok_or("Backend not initialized")?;
     
-    // Model parameters
-    let model_params = LlamaModelParams::default();
+    // Model parameters with GPU acceleration
+    // Use 99 layers on GPU (llama.cpp will use max available)
+    let model_params = LlamaModelParams::default()
+        .with_n_gpu_layers(99);
     
     // Load model
     let model = LlamaModel::load_from_file(backend, path, &model_params)
