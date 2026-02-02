@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["appimage", "deb"],
+    "targets": "all",
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"
@@ -46,11 +46,20 @@
       }
     },
     "macOS": {
-      "minimumSystemVersion": "10.13"
+      "minimumSystemVersion": "10.13",
+      "signingIdentity": null,
+      "entitlements": null
     },
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
+      },
+      "wix": {
+        "language": ["en-US", "ru-RU"]
+      },
+      "nsis": {
+        "languages": ["English", "Russian"],
+        "displayLanguageSelector": true
       }
     }
   },
