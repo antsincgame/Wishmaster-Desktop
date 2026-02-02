@@ -66,6 +66,14 @@ jobs:
       with:
         node-version: '20'
 
+    - name: Generate Windows ICO
+      shell: pwsh
+      run: |
+        # Install ImageMagick
+        choco install imagemagick -y
+        # Convert PNG to ICO
+        magick src-tauri/icons/icon.png -define icon:auto-resize=256,128,64,48,32,16 src-tauri/icons/icon.ico
+
     - name: Install npm dependencies
       run: npm install
 

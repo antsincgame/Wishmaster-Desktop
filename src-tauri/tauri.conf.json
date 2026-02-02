@@ -32,7 +32,8 @@
     "active": true,
     "targets": ["appimage", "deb", "msi", "dmg"],
     "icon": [
-      "icons/icon.png"
+      "icons/icon.png",
+      "icons/icon.ico"
     ],
     "resources": [],
     "externalBin": [],
