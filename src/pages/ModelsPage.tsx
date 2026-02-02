@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Box, Download, Trash2, Check, Loader2, HardDrive, RefreshCw } from 'lucide-react'
+import { Box, Download, Check, Loader2, HardDrive, RefreshCw } from 'lucide-react'
 import { useStore } from '../store'
 import clsx from 'clsx'
 
