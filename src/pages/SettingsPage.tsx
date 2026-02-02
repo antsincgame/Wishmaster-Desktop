@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react'
 import { useStore } from '../store'
 import clsx from 'clsx'
 
@@ -12,15 +13,36 @@ const ACCENT_COLORS = [
 
 export function SettingsPage() {
   const { settings, saveSettings } = useStore()
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSave = useCallback(async (updates: Parameters<typeof saveSettings>[0]) => {
+    setError(null)
+    try {
+      await saveSettings(updates)
+      setSavedAt(Date.now())
+      setTimeout(() => setSavedAt(null), 2500)
+    } catch (e) {
+      setError('Не удалось сохранить настройки')
+    }
+  }, [saveSettings])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="px-6 py-4 border-b border-cyber-border bg-cyber-surface">
-        <h2 className="text-xl font-bold text-neon-cyan">⚙️ Настройки</h2>
-        <p className="text-xs text-gray-500">
-          Параметры генерации и интерфейса
-        </p>
+      <header className="px-6 py-4 border-b border-cyber-border bg-cyber-surface flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-neon-cyan">⚙️ Настройки</h2>
+          <p className="text-xs text-gray-500">
+            Параметры генерации и интерфейса
+          </p>
+        </div>
+        {savedAt !== null && (
+          <span className="text-sm text-neon-green animate-pulse">✓ Сохранено</span>
+        )}
+        {error && (
+          <span className="text-sm text-red-400">{error}</span>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -42,7 +64,7 @@ export function SettingsPage() {
                 min="0"
                 max="100"
                 value={settings.temperature * 100}
-                onChange={(e) => saveSettings({ temperature: Number(e.target.value) / 100 })}
+                onChange={(e) => handleSave({ temperature: Number(e.target.value) / 100 })}
                 className="w-full accent-neon-cyan"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -62,7 +84,7 @@ export function SettingsPage() {
                 max="4096"
                 step="64"
                 value={settings.maxTokens}
-                onChange={(e) => saveSettings({ maxTokens: Number(e.target.value) })}
+                onChange={(e) => handleSave({ maxTokens: Number(e.target.value) })}
                 className="w-full accent-neon-cyan"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -82,7 +104,7 @@ export function SettingsPage() {
                 max="8192"
                 step="512"
                 value={settings.contextLength}
-                onChange={(e) => saveSettings({ contextLength: Number(e.target.value) })}
+                onChange={(e) => handleSave({ contextLength: Number(e.target.value) })}
                 className="w-full accent-neon-cyan"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -106,7 +128,7 @@ export function SettingsPage() {
                 <p className="text-xs text-gray-500">Whisper.cpp</p>
               </div>
               <button
-                onClick={() => saveSettings({ sttEnabled: !settings.sttEnabled })}
+                onClick={() => handleSave({ sttEnabled: !settings.sttEnabled })}
                 className={clsx(
                   'w-12 h-6 rounded-full transition-all',
                   settings.sttEnabled ? 'bg-neon-cyan' : 'bg-gray-600'
@@ -126,7 +148,7 @@ export function SettingsPage() {
                 <p className="text-xs text-gray-500">Coqui XTTS + Клонирование</p>
               </div>
               <button
-                onClick={() => saveSettings({ ttsEnabled: !settings.ttsEnabled })}
+                onClick={() => handleSave({ ttsEnabled: !settings.ttsEnabled })}
                 className={clsx(
                   'w-12 h-6 rounded-full transition-all',
                   settings.ttsEnabled ? 'bg-neon-magenta' : 'bg-gray-600'
@@ -146,7 +168,7 @@ export function SettingsPage() {
                 <p className="text-xs text-gray-500">Озвучивать ответы AI</p>
               </div>
               <button
-                onClick={() => saveSettings({ autoSpeak: !settings.autoSpeak })}
+                onClick={() => handleSave({ autoSpeak: !settings.autoSpeak })}
                 disabled={!settings.ttsEnabled}
                 className={clsx(
                   'w-12 h-6 rounded-full transition-all',
@@ -175,7 +197,7 @@ export function SettingsPage() {
               <label className="block text-sm text-gray-400 mb-2">Тема</label>
               <div className="flex gap-2">
                 <button
-                  onClick={() => saveSettings({ theme: 'dark' })}
+                  onClick={() => handleSave({ theme: 'dark' })}
                   className={clsx(
                     'flex-1 px-4 py-2 rounded-lg border transition-all',
                     settings.theme === 'dark'
@@ -186,7 +208,7 @@ export function SettingsPage() {
                   🌙 Тёмная
                 </button>
                 <button
-                  onClick={() => saveSettings({ theme: 'light' })}
+                  onClick={() => handleSave({ theme: 'light' })}
                   className={clsx(
                     'flex-1 px-4 py-2 rounded-lg border transition-all',
                     settings.theme === 'light'
@@ -206,7 +228,7 @@ export function SettingsPage() {
                 {ACCENT_COLORS.map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => saveSettings({ accentColor: c.id })}
+                    onClick={() => handleSave({ accentColor: c.id })}
                     className={clsx(
                       'w-10 h-10 rounded-lg border-2 transition-all',
                       settings.accentColor === c.id

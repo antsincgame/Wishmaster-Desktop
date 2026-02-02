@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Mic, Square, Play, Pause, Trash2, Plus, Volume2, Check } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Plus, Volume2, Check, RefreshCw } from 'lucide-react'
 import { useStore } from '../store'
 import { formatDate } from '../utils'
 import clsx from 'clsx'
@@ -9,7 +9,9 @@ export function VoiceClonePage() {
     voiceProfiles, 
     currentVoice,
     loadVoiceProfiles,
+    loadVoiceRecordings,
     createVoiceProfile,
+    createVoiceProfileFromRecording,
     deleteVoiceProfile,
     selectVoice,
     speak,
@@ -17,6 +19,9 @@ export function VoiceClonePage() {
     stopSpeaking
   } = useStore()
 
+  const [voiceRecordings, setVoiceRecordings] = useState<Array<{ id: number; path: string; createdAt: number }>>([])
+  const [createFromRecordingId, setCreateFromRecordingId] = useState<number | null>(null)
+  const [createFromRecordingName, setCreateFromRecordingName] = useState('')
   const [isRecording, setIsRecording] = useState(false)
   const [recordedAudio, setRecordedAudio] = useState<string | null>(null)
   const [newProfileName, setNewProfileName] = useState('')
@@ -28,10 +33,14 @@ export function VoiceClonePage() {
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
 
-  // Load profiles on mount
+  // Load profiles and recordings on mount
   useEffect(() => {
     loadVoiceProfiles()
   }, [loadVoiceProfiles])
+
+  useEffect(() => {
+    loadVoiceRecordings().then(setVoiceRecordings)
+  }, [loadVoiceRecordings])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -266,6 +275,84 @@ export function VoiceClonePage() {
             </div>
           </div>
         )}
+
+        {/* Recordings from chat */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-neon-cyan uppercase tracking-wider">
+              🎤 Записи из чата
+            </h3>
+            <button
+              onClick={() => loadVoiceRecordings().then(setVoiceRecordings)}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg border border-cyber-border text-gray-400 hover:text-neon-cyan text-xs"
+            >
+              <RefreshCw size={14} />
+              Обновить
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            Голосовые сообщения из чата сохраняются здесь. Создайте профиль из любой записи.
+          </p>
+          {voiceRecordings.length === 0 ? (
+            <div className="p-4 rounded-xl border border-cyber-border bg-cyber-surface/50 text-gray-500 text-sm">
+              Нет записей. Используйте голосовой ввод в чате — записи появятся здесь.
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {voiceRecordings.map((rec) => (
+                <div
+                  key={rec.id}
+                  className="flex items-center justify-between p-3 rounded-xl border border-cyber-border bg-cyber-surface"
+                >
+                  <span className="text-sm text-gray-400 truncate flex-1 mr-2" title={rec.path}>
+                    {rec.path.split('/').pop() ?? rec.path}
+                  </span>
+                  <button
+                    onClick={() => { setCreateFromRecordingId(rec.id); setCreateFromRecordingName(`Голос из чата ${rec.id}`) }}
+                    className="px-3 py-1.5 rounded-lg border border-neon-cyan text-neon-cyan text-sm hover:bg-neon-cyan/10"
+                  >
+                    Создать профиль
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {createFromRecordingId !== null && (
+            <div className="mt-4 p-4 rounded-xl border border-neon-cyan/30 bg-neon-cyan/5">
+              <p className="text-sm text-neon-cyan mb-2">Название профиля:</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={createFromRecordingName}
+                  onChange={(e) => setCreateFromRecordingName(e.target.value)}
+                  placeholder="Мой голос из чата"
+                  className="flex-1 px-3 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-white"
+                />
+                <button
+                  onClick={async () => {
+                    try {
+                      await createVoiceProfileFromRecording(createFromRecordingId, createFromRecordingName)
+                      setCreateFromRecordingId(null)
+                      setCreateFromRecordingName('')
+                      loadVoiceRecordings().then(setVoiceRecordings)
+                    } catch (e) {
+                      setError('Не удалось создать профиль')
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg bg-neon-cyan/20 border border-neon-cyan text-neon-cyan"
+                >
+                  Создать
+                </button>
+                <button
+                  onClick={() => { setCreateFromRecordingId(null); setCreateFromRecordingName('') }}
+                  className="px-4 py-2 rounded-lg border border-cyber-border text-gray-400"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Voice profiles list */}
         <div>

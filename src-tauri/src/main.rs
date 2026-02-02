@@ -50,7 +50,9 @@ fn main() {
             commands::load_settings,
             commands::save_settings,
             // Models
-            commands::scan_models,
+            commands::get_model_paths,
+            commands::add_model_path,
+            commands::remove_model_path,
             commands::load_model,
             commands::unload_model,
             // Sessions
@@ -71,6 +73,9 @@ fn main() {
             commands::stop_recording,
             commands::speak,
             commands::stop_speaking,
+            commands::get_voice_recordings,
+            commands::save_voice_from_chat,
+            commands::create_voice_profile_from_recording,
         ])
         .run(tauri::generate_context!());
     

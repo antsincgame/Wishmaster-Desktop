@@ -29,6 +29,12 @@ export interface VoiceProfile {
   createdAt: number
 }
 
+export interface VoiceRecording {
+  id: number
+  path: string
+  createdAt: number
+}
+
 interface Settings {
   temperature: number
   maxTokens: number
@@ -38,6 +44,7 @@ interface Settings {
   autoSpeak: boolean
   sttEnabled: boolean
   ttsEnabled: boolean
+  modelPaths: string[]
 }
 
 interface AppState {
@@ -69,6 +76,8 @@ interface AppState {
   saveSettings: (settings: Partial<Settings>) => Promise<void>
   
   loadModels: () => Promise<void>
+  addModelPath: (path: string) => Promise<void>
+  removeModelPath: (path: string) => Promise<void>
   loadModel: (path: string) => Promise<void>
   unloadModel: () => Promise<void>
   
@@ -85,8 +94,11 @@ interface AppState {
   // Voice
   loadVoiceProfiles: () => Promise<void>
   createVoiceProfile: (name: string, audioPath: string) => Promise<void>
+  createVoiceProfileFromRecording: (recordingId: number, name: string) => Promise<void>
   deleteVoiceProfile: (id: number) => Promise<void>
   selectVoice: (profile: VoiceProfile | null) => void
+  loadVoiceRecordings: () => Promise<VoiceRecording[]>
+  saveVoiceFromChat: (base64Audio: string) => Promise<string>
   startRecording: () => Promise<void>
   stopRecording: () => Promise<string>
   speak: (text: string, voiceId?: number) => Promise<void>
@@ -116,6 +128,7 @@ export const useStore = create<AppState>((set, get) => ({
     autoSpeak: false,
     sttEnabled: true,
     ttsEnabled: true,
+    modelPaths: [] as string[],
   },
 
   // Settings
@@ -135,16 +148,42 @@ export const useStore = create<AppState>((set, get) => ({
       await invoke('save_settings', { settings })
     } catch (e) {
       console.error('Failed to save settings:', e)
+      throw e
     }
   },
 
-  // Models
+  // Models (manual paths only)
   loadModels: async () => {
     try {
-      const models = await invoke<Model[]>('scan_models')
+      const paths = await invoke<string[]>('get_model_paths')
+      const models: Model[] = paths.map(p => ({
+        name: p.split('/').pop()?.replace(/\.gguf$/i, '') ?? 'Модель',
+        path: p,
+        size: 0,
+        isLoaded: false,
+      }))
       set({ models })
     } catch (e) {
-      console.error('Failed to load models:', e)
+      console.error('Failed to load model paths:', e)
+    }
+  },
+
+  addModelPath: async (path) => {
+    try {
+      await invoke('add_model_path', { path: path.trim() })
+      await get().loadModels()
+    } catch (e) {
+      console.error('Failed to add path:', e)
+      throw e
+    }
+  },
+
+  removeModelPath: async (path) => {
+    try {
+      await invoke('remove_model_path', { path })
+      await get().loadModels()
+    } catch (e) {
+      console.error('Failed to remove path:', e)
     }
   },
 
@@ -341,6 +380,29 @@ export const useStore = create<AppState>((set, get) => ({
       console.error('Failed to create voice profile:', e)
       throw e
     }
+  },
+
+  createVoiceProfileFromRecording: async (recordingId, name) => {
+    try {
+      await invoke('create_voice_profile_from_recording', { recordingId, name })
+      await get().loadVoiceProfiles()
+    } catch (e) {
+      console.error('Failed to create profile from recording:', e)
+      throw e
+    }
+  },
+
+  loadVoiceRecordings: async () => {
+    try {
+      return await invoke<VoiceRecording[]>('get_voice_recordings')
+    } catch (e) {
+      console.error('Failed to load voice recordings:', e)
+      return []
+    }
+  },
+
+  saveVoiceFromChat: async (base64Audio) => {
+    return await invoke<string>('save_voice_from_chat', { base64Audio })
   },
 
   deleteVoiceProfile: async (id) => {

@@ -1,5 +1,6 @@
+use base64::Engine;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::database;
@@ -26,6 +27,8 @@ pub struct Settings {
     pub stt_enabled: bool,
     #[serde(rename = "ttsEnabled")]
     pub tts_enabled: bool,
+    #[serde(rename = "modelPaths")]
+    pub model_paths: Vec<String>,
 }
 
 impl Default for Settings {
@@ -39,6 +42,7 @@ impl Default for Settings {
             auto_speak: false,
             stt_enabled: true,
             tts_enabled: true,
+            model_paths: Vec::new(),
         }
     }
 }
@@ -88,6 +92,14 @@ pub struct HistoryMessage {
     pub is_user: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceRecording {
+    pub id: i64,
+    pub path: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+}
+
 // ==================== Settings Commands ====================
 
 #[tauri::command]
@@ -102,42 +114,35 @@ pub fn save_settings(settings: Settings) -> Result<(), String> {
 
 // ==================== Model Commands ====================
 
+/// Get model paths from settings (manual paths only)
 #[tauri::command]
-pub fn scan_models() -> Result<Vec<Model>, String> {
-    let mut models = Vec::new();
-    
-    // Search in common directories
-    let home = dirs::home_dir().unwrap_or_default();
-    let search_paths = vec![
-        home.join("models"),
-        home.join("Downloads"),
-        home.join(".cache/llama.cpp"),
-    ];
-    
-    for path in search_paths {
-        if path.exists() {
-            if let Ok(entries) = std::fs::read_dir(&path) {
-                for entry in entries.flatten() {
-                    let file_path = entry.path();
-                    if file_path.extension().map(|e| e == "gguf").unwrap_or(false) {
-                        if let Ok(metadata) = entry.metadata() {
-                            models.push(Model {
-                                name: file_path.file_stem()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or("Unknown")
-                                    .to_string(),
-                                path: file_path.to_string_lossy().to_string(),
-                                size: metadata.len() as i64,
-                                is_loaded: false,
-                            });
-                        }
-                    }
-                }
-            }
-        }
+pub fn get_model_paths() -> Result<Vec<String>, String> {
+    let settings = database::get_settings().map_err(|e| e.to_string())?;
+    Ok(settings.model_paths)
+}
+
+/// Add a path to model list
+#[tauri::command]
+pub fn add_model_path(path: String) -> Result<(), String> {
+    let mut settings = database::get_settings().map_err(|e| e.to_string())?;
+    let path_trimmed = path.trim().to_string();
+    if path_trimmed.is_empty() {
+        return Ok(());
     }
-    
-    Ok(models)
+    if !settings.model_paths.contains(&path_trimmed) {
+        settings.model_paths.push(path_trimmed);
+        database::save_settings(&settings).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Remove a path from model list
+#[tauri::command]
+pub fn remove_model_path(path: String) -> Result<(), String> {
+    let mut settings = database::get_settings().map_err(|e| e.to_string())?;
+    settings.model_paths.retain(|p| p != &path);
+    database::save_settings(&settings).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -279,4 +284,45 @@ pub async fn speak(text: String, voice_id: Option<i64>) -> Result<(), String> {
 pub fn stop_speaking() -> Result<(), String> {
     voice::stop_speaking();
     Ok(())
+}
+
+// ==================== Voice Recordings (from chat) ====================
+
+#[tauri::command]
+pub fn get_voice_recordings() -> Result<Vec<VoiceRecording>, String> {
+    database::get_voice_recordings().map_err(|e| e.to_string())
+}
+
+/// Save voice recording from chat (base64 audio), returns path
+#[tauri::command]
+pub fn save_voice_from_chat(app: AppHandle, base64_audio: String) -> Result<String, String> {
+    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&app_dir).ok();
+    let voice_dir = app_dir.join("voice_recordings");
+    std::fs::create_dir_all(&voice_dir).map_err(|e| e.to_string())?;
+    
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64_audio.trim())
+        .map_err(|e| format!("Invalid base64: {}", e))?;
+    
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let filename = format!("chat_{}.webm", now);
+    let path = voice_dir.join(&filename);
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    
+    let path_str = path.to_string_lossy().to_string();
+    database::save_voice_recording(&path_str).map_err(|e| e.to_string())?;
+    Ok(path_str)
+}
+
+/// Create voice profile from a chat recording
+#[tauri::command]
+pub fn create_voice_profile_from_recording(recording_id: i64, name: String) -> Result<i64, String> {
+    let recordings = database::get_voice_recordings().map_err(|e| e.to_string())?;
+    let rec = recordings.iter().find(|r| r.id == recording_id)
+        .ok_or_else(|| "Recording not found".to_string())?;
+    database::create_voice_profile(name.trim(), &rec.path).map_err(|e| e.to_string())
 }

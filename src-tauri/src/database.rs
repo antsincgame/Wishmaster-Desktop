@@ -3,7 +3,7 @@ use rusqlite::{params, Connection, Result};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::commands::{Message, Session, Settings, VoiceProfile};
+use crate::commands::{Message, Session, Settings, VoiceProfile, VoiceRecording};
 
 static DB: OnceCell<Mutex<Connection>> = OnceCell::new();
 
@@ -48,6 +48,12 @@ pub fn init(db_path: &Path) -> Result<()> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             audio_path TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        
+        CREATE TABLE IF NOT EXISTS voice_recordings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
         
@@ -110,6 +116,7 @@ pub fn get_settings() -> Result<Settings> {
             "autoSpeak" => settings.auto_speak = value == "true",
             "sttEnabled" => settings.stt_enabled = value == "true",
             "ttsEnabled" => settings.tts_enabled = value == "true",
+            "modelPaths" => settings.model_paths = serde_json::from_str(&value).unwrap_or_default(),
             _ => {}
         }
     }
@@ -119,6 +126,7 @@ pub fn get_settings() -> Result<Settings> {
 
 pub fn save_settings(settings: &Settings) -> Result<()> {
     let conn = get_conn()?;
+    let model_paths_json = serde_json::to_string(&settings.model_paths).unwrap_or_else(|_| "[]".to_string());
     
     let pairs = vec![
         ("temperature", settings.temperature.to_string()),
@@ -129,6 +137,7 @@ pub fn save_settings(settings: &Settings) -> Result<()> {
         ("autoSpeak", settings.auto_speak.to_string()),
         ("sttEnabled", settings.stt_enabled.to_string()),
         ("ttsEnabled", settings.tts_enabled.to_string()),
+        ("modelPaths", model_paths_json),
     ];
     
     for (key, value) in pairs {
@@ -255,4 +264,35 @@ pub fn delete_voice_profile(id: i64) -> Result<()> {
     let conn = get_conn()?;
     conn.execute("DELETE FROM voice_profiles WHERE id = ?1", params![id])?;
     Ok(())
+}
+
+// ==================== Voice Recordings (from chat) ====================
+
+pub fn get_voice_recordings() -> Result<Vec<VoiceRecording>> {
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, path, created_at FROM voice_recordings ORDER BY created_at DESC"
+    )?;
+    
+    let recordings = stmt.query_map([], |row| {
+        Ok(VoiceRecording {
+            id: row.get(0)?,
+            path: row.get(1)?,
+            created_at: row.get(2)?,
+        })
+    })?;
+    
+    recordings.collect()
+}
+
+pub fn save_voice_recording(path: &str) -> Result<i64> {
+    let conn = get_conn()?;
+    let now = get_timestamp();
+    
+    conn.execute(
+        "INSERT INTO voice_recordings (path, created_at) VALUES (?1, ?2)",
+        params![path, now],
+    )?;
+    
+    Ok(conn.last_insert_rowid())
 }
