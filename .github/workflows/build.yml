@@ -76,10 +76,14 @@ jobs:
     - name: Generate Linux icons
       run: |
         cd src-tauri/icons
-        # Generate PNG sizes for Linux
+        # Generate PNG sizes for Linux (FreeDesktop standard)
         convert icon.png -resize 32x32 32x32.png
         convert icon.png -resize 128x128 128x128.png
         convert icon.png -resize 256x256 128x128@2x.png
+        convert icon.png -resize 512x512 512x512.png
+        # Create hicolor icon dirs for AppImage
+        mkdir -p ../hicolor/256x256/apps
+        cp icon.png ../hicolor/256x256/apps/wishmaster-desktop.png
         ls -la
 
     - name: Install npm dependencies
@@ -87,6 +91,9 @@ jobs:
 
     - name: Build Tauri app
       run: npm run tauri:build
+      env:
+        NO_STRIP: true
+        APPIMAGE_EXTRACT_AND_RUN: 1
 
     - name: Upload Linux AppImage
       uses: actions/upload-artifact@v4
