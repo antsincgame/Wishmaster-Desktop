@@ -43,13 +43,18 @@ jobs:
       env:
         TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
-    - name: Upload Linux artifact
+    - name: Upload Linux AppImage
       uses: actions/upload-artifact@v4
       with:
-        name: wishmaster-linux
-        path: |
-          src-tauri/target/release/bundle/deb/*.deb
-          src-tauri/target/release/bundle/appimage/*.AppImage
+        name: Wishmaster-Linux.AppImage
+        path: src-tauri/target/release/bundle/appimage/*.AppImage
+        
+    - name: Upload Linux DEB (optional)
+      uses: actions/upload-artifact@v4
+      with:
+        name: wishmaster-linux-deb
+        path: src-tauri/target/release/bundle/deb/*.deb
+        if-no-files-found: ignore
 
   build-windows:
     runs-on: windows-latest
