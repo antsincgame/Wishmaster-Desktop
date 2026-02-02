@@ -43,3 +43,4 @@ recordings/
 
 # Tauri
 src-tauri/WixTools/
+release/
