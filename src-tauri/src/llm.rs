@@ -13,8 +13,9 @@ const STOP_SEQUENCES: &[&str] = &[
 ];
 
 pub fn init() {
-    MODEL_PATH.set(Mutex::new(None)).ok();
-    CONTEXT_LENGTH.set(Mutex::new(2048)).ok();
+    // Initialize with default values, ignore if already initialized
+    let _ = MODEL_PATH.set(Mutex::new(None));
+    let _ = CONTEXT_LENGTH.set(Mutex::new(2048));
     println!("LLM engine initialized");
 }
 
@@ -26,16 +27,24 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
         return Err(format!("Model file not found: {}", path));
     }
     
-    // Store model path
-    if let Some(model_path) = MODEL_PATH.get() {
-        if let Ok(mut guard) = model_path.lock() {
+    // Store model path with proper error handling
+    let model_path = MODEL_PATH.get_or_init(|| Mutex::new(None));
+    match model_path.lock() {
+        Ok(mut guard) => {
             *guard = Some(path.to_string());
+        }
+        Err(e) => {
+            return Err(format!("Failed to lock model path: {}", e));
         }
     }
     
-    if let Some(ctx_len) = CONTEXT_LENGTH.get() {
-        if let Ok(mut guard) = ctx_len.lock() {
+    let ctx_len = CONTEXT_LENGTH.get_or_init(|| Mutex::new(2048));
+    match ctx_len.lock() {
+        Ok(mut guard) => {
             *guard = context_length;
+        }
+        Err(e) => {
+            return Err(format!("Failed to lock context length: {}", e));
         }
     }
     
@@ -50,9 +59,11 @@ pub fn unload_model() {
     if let Some(model_path) = MODEL_PATH.get() {
         if let Ok(mut guard) = model_path.lock() {
             *guard = None;
+            println!("Model unloaded");
+        } else {
+            eprintln!("Warning: Failed to lock model path for unload");
         }
     }
-    println!("Model unloaded");
 }
 
 pub fn is_loaded() -> bool {

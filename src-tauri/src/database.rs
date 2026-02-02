@@ -7,8 +7,19 @@ use crate::commands::{Message, Session, Settings, VoiceProfile};
 
 static DB: OnceCell<Mutex<Connection>> = OnceCell::new();
 
+/// Initialize the database connection
+/// Safe to call multiple times - subsequent calls are no-ops
 pub fn init(db_path: &Path) -> Result<()> {
+    // Check if already initialized
+    if DB.get().is_some() {
+        println!("Database already initialized");
+        return Ok(());
+    }
+    
     let conn = Connection::open(db_path)?;
+    
+    // Enable foreign keys
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
     
     // Create tables
     conn.execute_batch(r#"
@@ -43,16 +54,31 @@ pub fn init(db_path: &Path) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
     "#)?;
     
-    DB.set(Mutex::new(conn)).map_err(|_| rusqlite::Error::InvalidQuery)?;
-    
-    Ok(())
+    // Use set and handle the case where another thread initialized first
+    match DB.set(Mutex::new(conn)) {
+        Ok(()) => {
+            println!("Database initialized successfully");
+            Ok(())
+        }
+        Err(_) => {
+            // Another thread initialized DB first - this is fine
+            println!("Database was initialized by another thread");
+            Ok(())
+        }
+    }
 }
 
+/// Get database connection with proper error handling
 fn get_conn() -> Result<std::sync::MutexGuard<'static, Connection>> {
-    DB.get()
-        .ok_or_else(|| rusqlite::Error::InvalidQuery)?
-        .lock()
-        .map_err(|_| rusqlite::Error::InvalidQuery)
+    let db = DB.get().ok_or_else(|| {
+        eprintln!("Database not initialized! Call init() first.");
+        rusqlite::Error::InvalidQuery
+    })?;
+    
+    db.lock().map_err(|e| {
+        eprintln!("Failed to acquire database lock: {}", e);
+        rusqlite::Error::InvalidQuery
+    })
 }
 
 fn get_timestamp() -> i64 {
@@ -149,6 +175,8 @@ pub fn create_session(title: &str) -> Result<i64> {
 
 pub fn delete_session(session_id: i64) -> Result<()> {
     let conn = get_conn()?;
+    // Delete messages first (foreign key), then session
+    conn.execute("DELETE FROM messages WHERE session_id = ?1", params![session_id])?;
     conn.execute("DELETE FROM sessions WHERE id = ?1", params![session_id])?;
     Ok(())
 }

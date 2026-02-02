@@ -34,17 +34,21 @@ export function ChatPage() {
     let mounted = true
 
     const setup = async () => {
-      tokenUnlisten = await listen<string>('llm-token', (event) => {
-        if (mounted) {
-          appendTokenRef.current(event.payload)
-        }
-      })
+      try {
+        tokenUnlisten = await listen<string>('llm-token', (event) => {
+          if (mounted) {
+            appendTokenRef.current(event.payload)
+          }
+        })
 
-      finishUnlisten = await listen('llm-finished', () => {
-        if (mounted) {
-          finishGenerationRef.current()
-        }
-      })
+        finishUnlisten = await listen('llm-finished', () => {
+          if (mounted) {
+            finishGenerationRef.current()
+          }
+        })
+      } catch (error) {
+        console.error('Failed to setup event listeners:', error)
+      }
     }
 
     setup()

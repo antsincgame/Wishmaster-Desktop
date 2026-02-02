@@ -155,6 +155,10 @@ export const useStore = create<AppState>((set, get) => ({
       const model = get().models.find(m => m.path === path)
       if (model) {
         set({ currentModel: { ...model, isLoaded: true } })
+      } else {
+        // Model not found in list, create minimal entry
+        const name = path.split('/').pop()?.replace('.gguf', '') ?? 'Unknown'
+        set({ currentModel: { name, path, size: 0, isLoaded: true } })
       }
     } catch (e) {
       console.error('Failed to load model:', e)
@@ -179,7 +183,7 @@ export const useStore = create<AppState>((set, get) => ({
       const sessions = await invoke<Session[]>('get_sessions')
       set({ sessions })
       if (sessions.length > 0 && !get().currentSessionId) {
-        get().selectSession(sessions[0].id)
+        await get().selectSession(sessions[0].id)
       }
     } catch (e) {
       console.error('Failed to load sessions:', e)
@@ -190,7 +194,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const id = await invoke<number>('create_session', { title: 'Новый чат' })
       await get().loadSessions()
-      get().selectSession(id)
+      await get().selectSession(id)
     } catch (e) {
       console.error('Failed to create session:', e)
     }
@@ -213,7 +217,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (get().currentSessionId === id) {
         const sessions = get().sessions
         if (sessions.length > 0) {
-          get().selectSession(sessions[0].id)
+          await get().selectSession(sessions[0].id)
         } else {
           set({ currentSessionId: null, messages: [] })
         }
@@ -310,7 +314,9 @@ export const useStore = create<AppState>((set, get) => ({
 
       // Auto-speak if enabled
       if (settings.autoSpeak && settings.ttsEnabled) {
-        get().speak(assistantMsg.content)
+        get().speak(assistantMsg.content).catch(e => 
+          console.error('Auto-speak failed:', e)
+        )
       }
     } else {
       set({ isGenerating: false, pendingResponse: '' })
