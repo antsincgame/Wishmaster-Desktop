@@ -6,7 +6,9 @@ import {
   Mic, 
   Plus,
   Trash2,
-  Brain
+  Brain,
+  Cpu,
+  Zap
 } from 'lucide-react'
 import { useStore } from '../store'
 import clsx from 'clsx'
@@ -28,7 +30,8 @@ export function Sidebar() {
     createSession, 
     selectSession,
     deleteSession,
-    currentModel 
+    currentModel,
+    gpuInfo
   } = useStore()
 
   return (
@@ -111,8 +114,26 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Model status */}
-      <div className="p-3 border-t border-cyber-border">
+      {/* Model & GPU status */}
+      <div className="p-3 border-t border-cyber-border space-y-2">
+        {/* GPU Status */}
+        <div className="flex items-center gap-2">
+          {gpuInfo?.available ? (
+            <>
+              <Zap size={14} className="text-neon-green" />
+              <span className="text-xs text-neon-green font-medium">CUDA</span>
+              <div className="w-2 h-2 rounded-full bg-neon-green animate-pulse" />
+            </>
+          ) : (
+            <>
+              <Cpu size={14} className="text-yellow-500" />
+              <span className="text-xs text-yellow-500 font-medium">CPU</span>
+              <div className="w-2 h-2 rounded-full bg-yellow-500" />
+            </>
+          )}
+        </div>
+        
+        {/* Model Status */}
         <div className="flex items-center gap-2">
           <div className={clsx(
             'w-2 h-2 rounded-full',

@@ -153,6 +153,16 @@ pub fn unload_model() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn get_gpu_info() -> Result<llm::GpuInfo, String> {
+    Ok(llm::get_gpu_info())
+}
+
+#[tauri::command]
+pub fn is_gpu_available() -> bool {
+    llm::is_gpu_available()
+}
+
 // ==================== Session Commands ====================
 
 #[tauri::command]

@@ -80,6 +80,14 @@ export interface DataStats {
   estimated_tokens: number
 }
 
+export interface GpuInfo {
+  available: boolean
+  backend: string
+  device_name: string
+  vram_total_mb: number
+  vram_free_mb: number
+}
+
 interface Settings {
   temperature: number
   maxTokens: number
@@ -105,6 +113,9 @@ interface AppState {
   currentModel: Model | null
   isModelLoading: boolean
   
+  // GPU
+  gpuInfo: GpuInfo | null
+  
   // Voice
   voiceProfiles: VoiceProfile[]
   currentVoice: VoiceProfile | null
@@ -128,6 +139,7 @@ interface AppState {
   saveSettings: (settings: Partial<Settings>) => Promise<void>
   
   loadModels: () => Promise<void>
+  loadGpuInfo: () => Promise<void>
   addModelPath: (path: string) => Promise<void>
   removeModelPath: (path: string) => Promise<void>
   loadModel: (path: string) => Promise<void>
@@ -179,6 +191,7 @@ export const useStore = create<AppState>((set, get) => ({
   models: [],
   currentModel: null,
   isModelLoading: false,
+  gpuInfo: null,
   voiceProfiles: [],
   currentVoice: null,
   isRecording: false,
@@ -237,6 +250,17 @@ export const useStore = create<AppState>((set, get) => ({
       set({ models })
     } catch (e) {
       console.error('Failed to load model paths:', e)
+    }
+  },
+  
+  loadGpuInfo: async () => {
+    try {
+      const gpuInfo = await invoke<GpuInfo>('get_gpu_info')
+      console.log('GPU Info:', gpuInfo)
+      set({ gpuInfo })
+    } catch (e) {
+      console.error('Failed to load GPU info:', e)
+      set({ gpuInfo: { available: false, backend: 'CPU', device_name: 'N/A', vram_total_mb: 0, vram_free_mb: 0 } })
     }
   },
 

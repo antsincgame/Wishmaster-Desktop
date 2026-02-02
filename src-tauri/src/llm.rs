@@ -5,6 +5,7 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 use once_cell::sync::OnceCell;
+use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use std::sync::Mutex;
 
@@ -12,6 +13,16 @@ static BACKEND: OnceCell<LlamaBackend> = OnceCell::new();
 static MODEL: OnceCell<Mutex<Option<LlamaModel>>> = OnceCell::new();
 static MODEL_PATH: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 static CONTEXT_SIZE: OnceCell<Mutex<u32>> = OnceCell::new();
+static GPU_AVAILABLE: OnceCell<bool> = OnceCell::new();
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuInfo {
+    pub available: bool,
+    pub backend: String,
+    pub device_name: String,
+    pub vram_total_mb: u64,
+    pub vram_free_mb: u64,
+}
 
 /// Stop sequences for ChatML format
 const STOP_SEQUENCES: &[&str] = &[
@@ -31,13 +42,64 @@ pub fn init() {
     let _ = MODEL_PATH.set(Mutex::new(None));
     let _ = CONTEXT_SIZE.set(Mutex::new(2048));
     
-    println!("LLM engine initialized (native llama.cpp with CUDA)");
-    println!("llama.cpp backend ready - GPU acceleration enabled");
-    let _ = backend; // Use backend to avoid warning
+    // Check GPU support
+    let gpu_supported = backend.supports_gpu_offload();
+    let _ = GPU_AVAILABLE.set(gpu_supported);
+    
+    println!("╔══════════════════════════════════════════╗");
+    println!("║     WISHMASTER LLM ENGINE INIT           ║");
+    println!("╠══════════════════════════════════════════╣");
+    println!("║ Backend: llama.cpp (native)              ║");
+    if gpu_supported {
+        println!("║ GPU: ✅ CUDA AVAILABLE                   ║");
+        println!("║ Mode: GPU Accelerated                    ║");
+    } else {
+        println!("║ GPU: ❌ CPU ONLY                         ║");
+        println!("║ Mode: CPU (slower)                       ║");
+    }
+    println!("╚══════════════════════════════════════════╝");
+    
+    let _ = backend;
+}
+
+/// Get GPU/CUDA information
+pub fn get_gpu_info() -> GpuInfo {
+    let available = GPU_AVAILABLE.get().copied().unwrap_or(false);
+    
+    if available {
+        GpuInfo {
+            available: true,
+            backend: "CUDA".to_string(),
+            device_name: "NVIDIA GPU".to_string(), // Generic name
+            vram_total_mb: 0, // Would need unsafe FFI to get real values
+            vram_free_mb: 0,
+        }
+    } else {
+        GpuInfo {
+            available: false,
+            backend: "CPU".to_string(),
+            device_name: "N/A".to_string(),
+            vram_total_mb: 0,
+            vram_free_mb: 0,
+        }
+    }
+}
+
+/// Check if GPU/CUDA is available
+pub fn is_gpu_available() -> bool {
+    GPU_AVAILABLE.get().copied().unwrap_or(false)
 }
 
 pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
-    println!("Loading model: {} with context: {}", path, context_length);
+    let gpu_available = is_gpu_available();
+    
+    println!("╔══════════════════════════════════════════╗");
+    println!("║          LOADING MODEL                   ║");
+    println!("╠══════════════════════════════════════════╣");
+    println!("║ Path: {}...", &path[path.len().saturating_sub(40)..]);
+    println!("║ Context: {} tokens", context_length);
+    println!("║ GPU Layers: {}", if gpu_available { "99 (max)" } else { "0 (CPU)" });
+    println!("╚══════════════════════════════════════════╝");
     
     // Check if file exists
     if !std::path::Path::new(path).exists() {
@@ -49,8 +111,11 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
     
     // Model parameters with GPU acceleration
     // Use 99 layers on GPU (llama.cpp will use max available)
+    let gpu_layers = if gpu_available { 99 } else { 0 };
     let model_params = LlamaModelParams::default()
-        .with_n_gpu_layers(99);
+        .with_n_gpu_layers(gpu_layers);
+    
+    println!("⏳ Loading model to {}...", if gpu_available { "GPU" } else { "CPU" });
     
     // Load model
     let model = LlamaModel::load_from_file(backend, path, &model_params)
@@ -79,7 +144,12 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
         *guard = context_length as u32;
     }
     
-    println!("Model loaded successfully!");
+    println!("✅ Model loaded successfully!");
+    if gpu_available {
+        println!("🚀 Running on CUDA GPU - Fast inference enabled");
+    } else {
+        println!("⚠️ Running on CPU - Consider using GPU for faster inference");
+    }
     Ok(())
 }
 

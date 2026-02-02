@@ -57,6 +57,8 @@ fn main() {
             commands::remove_model_path,
             commands::load_model,
             commands::unload_model,
+            commands::get_gpu_info,
+            commands::is_gpu_available,
             // Sessions
             commands::get_sessions,
             commands::create_session,
