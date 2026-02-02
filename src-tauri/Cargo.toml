@@ -23,11 +23,9 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 dirs = "5"
 once_cell = "1"
 base64 = "0.21"
-reqwest = { version = "0.11", features = ["json", "stream", "blocking"] }
-futures-util = "0.3"
 
-# LLM - placeholder (add llama-cpp-2 later when ready for native integration)
-# llama-cpp-2 = "0.1"
+# LLM - native llama.cpp bindings (builds llama.cpp from source)
+llama-cpp-2 = "0.1"
 
 # Audio - placeholder (add cpal + hound later for voice features)
 # cpal = "0.15"

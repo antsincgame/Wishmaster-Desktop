@@ -55,7 +55,6 @@ fn main() {
             commands::remove_model_path,
             commands::load_model,
             commands::unload_model,
-            commands::check_llm_server,
             // Sessions
             commands::get_sessions,
             commands::create_session,
