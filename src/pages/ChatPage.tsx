@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { ChatMessage, StreamingMessage, TypingIndicator } from '../components/ChatMessage'
 import { ChatInput } from '../components/ChatInput'
