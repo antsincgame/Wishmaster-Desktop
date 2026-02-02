@@ -1,4 +1,6 @@
-name: Build Desktop App
+# Сборка только для Linux (AppImage, DEB). Windows/macOS отключены.
+
+name: Build Linux Desktop
 
 on:
   push:
@@ -9,6 +11,7 @@ on:
 
 jobs:
   build-linux:
+    name: Build Linux AppImage
     runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
@@ -20,6 +23,7 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
+        cache: 'npm'
 
     - name: Install Linux dependencies
       run: |
@@ -35,7 +39,7 @@ jobs:
           librsvg2-dev \
           imagemagick
 
-    - name: Generate Windows ICO (for bundler compatibility)
+    - name: Generate icon.ico (for bundler compatibility)
       run: |
         convert src-tauri/icons/icon.png -define icon:auto-resize=256,128,64,48,32,16 src-tauri/icons/icon.ico
 
@@ -48,100 +52,33 @@ jobs:
     - name: Upload Linux AppImage
       uses: actions/upload-artifact@v4
       with:
-        name: wishmaster-linux
+        name: wishmaster-linux-appimage
         path: src-tauri/target/release/bundle/appimage/*.AppImage
         
-    - name: Upload Linux DEB (optional)
+    - name: Upload Linux DEB
       uses: actions/upload-artifact@v4
       with:
         name: wishmaster-linux-deb
         path: src-tauri/target/release/bundle/deb/*.deb
         if-no-files-found: ignore
 
-  build-windows:
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-
-    - name: Generate Windows ICO
-      shell: pwsh
-      run: |
-        # Install ImageMagick
-        choco install imagemagick -y
-        # Convert PNG to ICO
-        magick src-tauri/icons/icon.png -define icon:auto-resize=256,128,64,48,32,16 src-tauri/icons/icon.ico
-
-    - name: Install npm dependencies
-      run: npm install
-
-    - name: Build Tauri app
-      run: npm run tauri:build
-
-    - name: Upload Windows artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: wishmaster-windows
-        path: |
-          src-tauri/target/release/bundle/msi/*.msi
-          src-tauri/target/release/bundle/nsis/*.exe
-
-  build-macos:
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-
-    - name: Install ImageMagick and generate ICO
-      run: |
-        brew install imagemagick
-        convert src-tauri/icons/icon.png -define icon:auto-resize=256,128,64,48,32,16 src-tauri/icons/icon.ico
-
-    - name: Install npm dependencies
-      run: npm install
-
-    - name: Build Tauri app
-      run: npm run tauri:build
-
-    - name: Upload macOS artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: wishmaster-macos
-        path: |
-          src-tauri/target/release/bundle/dmg/*.dmg
-          src-tauri/target/release/bundle/macos/*.app
-
   release:
-    needs: [build-linux, build-windows, build-macos]
+    name: Create GitHub Release
+    needs: build-linux
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
     steps:
-    - name: Download all artifacts
+    - name: Download Linux artifacts
       uses: actions/download-artifact@v4
       
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: v${{ github.run_number }}
-        name: Release v${{ github.run_number }}
+        name: Wishmaster Desktop v${{ github.run_number }} (Linux)
         files: |
-          wishmaster-linux/*
-          wishmaster-windows/*
-          wishmaster-macos/*
+          wishmaster-linux-appimage/*
+          wishmaster-linux-deb/*
         draft: false
         prerelease: false
       env:

@@ -157,6 +157,11 @@ pub fn unload_model() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn check_llm_server() -> Result<bool, String> {
+    Ok(llm::check_server().await)
+}
+
 // ==================== Session Commands ====================
 
 #[tauri::command]
