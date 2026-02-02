@@ -43,5 +43,3 @@ recordings/
 
 # Tauri
 src-tauri/WixTools/
-src-tauri/icons/
-!src-tauri/icons/.gitkeep
