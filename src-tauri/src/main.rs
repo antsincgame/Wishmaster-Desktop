@@ -10,8 +10,6 @@ use tauri::Manager;
 
 fn main() {
     let result = tauri::Builder::default()
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Initialize database
             let app_dir = match app.path().app_data_dir() {

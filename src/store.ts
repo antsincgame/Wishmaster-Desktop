@@ -385,7 +385,8 @@ export const useStore = create<AppState>((set, get) => ({
     set({ isSpeaking: true })
     try {
       // Use passed voiceId or fall back to currentVoice
-      const id = voiceId ?? get().currentVoice?.id
+      // Pass null instead of undefined for Rust Option<i64>
+      const id = voiceId ?? get().currentVoice?.id ?? null
       await invoke('speak', { text, voiceId: id })
     } catch (e) {
       console.error('Failed to speak:', e)
