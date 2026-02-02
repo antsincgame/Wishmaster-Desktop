@@ -3,6 +3,14 @@
 @tailwind utilities;
 
 /* ========================
+   CSS VARIABLES
+   ======================== */
+:root {
+  --accent-color: #00ffff;
+  --accent-glow: 0 0 20px #00ffff;
+}
+
+/* ========================
    SCROLLBAR
    ======================== */
 ::-webkit-scrollbar {
@@ -15,25 +23,72 @@
   border-radius: 4px;
 }
 
+.light-theme ::-webkit-scrollbar-track {
+  background: #e5e5e5;
+}
+
 ::-webkit-scrollbar-thumb {
-  background: #00ffff;
+  background: var(--accent-color);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #00cccc;
+  opacity: 0.8;
 }
 
 /* ========================
    SELECTION
    ======================== */
 ::selection {
-  background: #00ffff;
+  background: var(--accent-color);
   color: #0a0a0f;
 }
 
 /* ========================
-   GLOW EFFECTS (used)
+   LIGHT THEME
+   ======================== */
+.light-theme {
+  --tw-bg-opacity: 1;
+}
+
+.light-theme .bg-cyber-dark {
+  background-color: #f5f5f5;
+}
+
+.light-theme .bg-cyber-surface {
+  background-color: #ffffff;
+}
+
+.light-theme .bg-cyber-darker {
+  background-color: #e8e8e8;
+}
+
+.light-theme .border-cyber-border {
+  border-color: #d0d0d0;
+}
+
+.light-theme .text-gray-100 {
+  color: #1a1a1a;
+}
+
+.light-theme .text-gray-400 {
+  color: #666666;
+}
+
+.light-theme .text-gray-500 {
+  color: #888888;
+}
+
+.light-theme .text-white {
+  color: #1a1a1a;
+}
+
+.light-theme .placeholder-gray-500::placeholder {
+  color: #999999;
+}
+
+/* ========================
+   GLOW EFFECTS
    ======================== */
 .glow-cyan {
   box-shadow: 0 0 20px rgba(0, 255, 255, 0.3), 0 0 40px rgba(0, 255, 255, 0.1);
@@ -47,11 +102,19 @@
   box-shadow: 0 0 20px rgba(0, 255, 65, 0.3), 0 0 40px rgba(0, 255, 65, 0.1);
 }
 
+.glow-accent {
+  box-shadow: var(--accent-glow);
+}
+
 /* ========================
-   TEXT GLOW (used)
+   TEXT GLOW
    ======================== */
 .text-glow-cyan {
   text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;
+}
+
+.text-glow-accent {
+  text-shadow: 0 0 10px var(--accent-color), 0 0 20px var(--accent-color);
 }
 
 /* ========================
@@ -92,4 +155,16 @@
     @apply px-4 py-2 rounded-lg border border-red-500/50 text-red-400 
            hover:bg-red-500/10 transition-all;
   }
+}
+
+/* ========================
+   ACCENT COLOR OVERRIDES
+   ======================== */
+.accent-active {
+  border-color: var(--accent-color) !important;
+  color: var(--accent-color) !important;
+}
+
+.accent-bg {
+  background-color: var(--accent-color) !important;
 }

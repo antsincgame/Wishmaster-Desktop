@@ -7,9 +7,19 @@ import { SettingsPage } from './pages/SettingsPage'
 import { VoiceClonePage } from './pages/VoiceClonePage'
 import { MemoryPage } from './pages/MemoryPage'
 import { useStore } from './store'
+import clsx from 'clsx'
+
+// Accent color CSS variables
+const ACCENT_COLORS: Record<string, { primary: string; glow: string }> = {
+  cyan: { primary: '#00ffff', glow: '0 0 20px #00ffff' },
+  magenta: { primary: '#ff0080', glow: '0 0 20px #ff0080' },
+  green: { primary: '#00ff41', glow: '0 0 20px #00ff41' },
+  yellow: { primary: '#ffff00', glow: '0 0 20px #ffff00' },
+  purple: { primary: '#bf00ff', glow: '0 0 20px #bf00ff' },
+}
 
 function App() {
-  const { loadSettings, loadModels, loadSessions, loadMemories, loadPersona, loadDataStats } = useStore()
+  const { settings, loadSettings, loadModels, loadSessions, loadMemories, loadPersona, loadDataStats } = useStore()
 
   useEffect(() => {
     // Initialize app
@@ -22,9 +32,32 @@ function App() {
     loadDataStats()
   }, [loadSettings, loadModels, loadSessions, loadMemories, loadPersona, loadDataStats])
 
+  // Apply theme to document
+  useEffect(() => {
+    const root = document.documentElement
+    
+    // Apply theme class
+    if (settings.theme === 'light') {
+      root.classList.add('light-theme')
+      root.classList.remove('dark-theme')
+    } else {
+      root.classList.add('dark-theme')
+      root.classList.remove('light-theme')
+    }
+    
+    // Apply accent color CSS variables
+    const accent = ACCENT_COLORS[settings.accentColor] || ACCENT_COLORS.cyan
+    root.style.setProperty('--accent-color', accent.primary)
+    root.style.setProperty('--accent-glow', accent.glow)
+    
+  }, [settings.theme, settings.accentColor])
+
   return (
     <BrowserRouter>
-      <div className="flex h-screen bg-cyber-dark text-gray-100">
+      <div className={clsx(
+        'flex h-screen text-gray-100',
+        settings.theme === 'light' ? 'bg-gray-100' : 'bg-cyber-dark'
+      )}>
         {/* Sidebar */}
         <Sidebar />
         

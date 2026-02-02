@@ -63,5 +63,9 @@
       }
     }
   },
-  "plugins": {}
+  "plugins": {
+    "dialog": {
+      "all": true
+    }
+  }
 }

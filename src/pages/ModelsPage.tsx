@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Box, Check, Loader2, Plus, Trash2, FolderOpen } from 'lucide-react'
+import { Box, Check, Loader2, Plus, Trash2, FolderOpen, FileSearch } from 'lucide-react'
 import { useStore } from '../store'
+import { open } from '@tauri-apps/plugin-dialog'
 import clsx from 'clsx'
 
 export function ModelsPage() {
@@ -22,6 +23,35 @@ export function ModelsPage() {
   useEffect(() => {
     loadModels()
   }, [loadModels])
+
+  // Open file picker dialog
+  const handleBrowse = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{
+          name: 'GGUF Models',
+          extensions: ['gguf']
+        }],
+        title: 'Выберите модель GGUF'
+      })
+      
+      if (selected && typeof selected === 'string') {
+        setNewPath(selected)
+        setPathError(null)
+        // Auto-add the selected path
+        try {
+          await addModelPath(selected)
+          setNewPath('')
+        } catch (e) {
+          setPathError('Не удалось добавить модель')
+        }
+      }
+    } catch (e) {
+      console.error('File dialog error:', e)
+      setPathError('Ошибка открытия диалога файлов')
+    }
+  }
 
   const handleAddPath = async () => {
     const path = newPath.trim()
@@ -52,25 +82,37 @@ export function ModelsPage() {
         <div>
           <h2 className="text-xl font-bold text-neon-cyan">📦 Модели</h2>
           <p className="text-xs text-gray-500">
-            Укажите пути к GGUF-моделям вручную
+            Добавьте GGUF-модели через обзор файлов или вручную
           </p>
         </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Add path manually */}
+        {/* Add model - File picker */}
         <section className="p-4 rounded-xl border border-neon-cyan/30 bg-neon-cyan/5">
           <h3 className="text-sm font-bold text-neon-cyan mb-3 flex items-center gap-2">
             <FolderOpen size={18} />
-            Добавить путь к модели
+            Добавить модель
           </h3>
+          
+          {/* Browse button */}
+          <button
+            onClick={handleBrowse}
+            className="w-full mb-4 flex items-center justify-center gap-3 px-6 py-4 rounded-xl bg-neon-cyan/10 border-2 border-dashed border-neon-cyan/50 text-neon-cyan hover:bg-neon-cyan/20 hover:border-neon-cyan transition-all"
+          >
+            <FileSearch size={24} />
+            <span className="text-lg font-bold">Обзор файлов...</span>
+          </button>
+          
+          {/* Manual path input */}
           <div className="flex gap-2">
             <input
               type="text"
               value={newPath}
               onChange={(e) => { setNewPath(e.target.value); setPathError(null) }}
-              placeholder="/home/user/models/model.gguf или ~/Downloads/model.gguf"
-              className="flex-1 px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-white placeholder-gray-500 focus:border-neon-cyan focus:outline-none"
+              placeholder="Или введите путь вручную: /home/user/model.gguf"
+              className="flex-1 px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-white placeholder-gray-500 focus:border-neon-cyan focus:outline-none text-sm"
+              onKeyDown={(e) => e.key === 'Enter' && handleAddPath()}
             />
             <button
               onClick={handleAddPath}
@@ -78,13 +120,9 @@ export function ModelsPage() {
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neon-cyan/20 border border-neon-cyan text-neon-cyan hover:bg-neon-cyan/30 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus size={18} />
-              Добавить
             </button>
           </div>
           {pathError && <p className="text-red-400 text-sm mt-2">{pathError}</p>}
-          <p className="text-xs text-gray-500 mt-2">
-            Введите полный путь к файлу .gguf
-          </p>
         </section>
 
         {/* Model list */}
@@ -95,7 +133,7 @@ export function ModelsPage() {
               Нет добавленных моделей
             </h3>
             <p className="text-gray-500 max-w-md">
-              Добавьте путь к модели выше (например: ~/models/qwen2.5-7b.gguf)
+              Нажмите "Обзор файлов" чтобы выбрать GGUF модель
             </p>
           </div>
         ) : (
