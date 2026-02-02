@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/app.png</file>
+        <file>icons/send.svg</file>
+        <file>icons/mic.svg</file>
+        <file>icons/stop.svg</file>
+        <file>icons/settings.svg</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,111 @@
+name: Build Desktop App
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.*'
+        modules: 'qtmultimedia'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-dev
+
+    - name: Clone llama.cpp
+      run: |
+        git clone --depth 1 --branch b7898 https://github.com/ggerganov/llama.cpp external/llama.cpp
+
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_WHISPER=OFF
+
+    - name: Build
+      run: cmake --build build --config Release -j$(nproc)
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: WishmasterDesktop-Linux
+        path: build/WishmasterDesktop
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.*'
+        modules: 'qtmultimedia'
+
+    - name: Clone llama.cpp
+      run: |
+        git clone --depth 1 --branch b7898 https://github.com/ggerganov/llama.cpp external/llama.cpp
+
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_WHISPER=OFF
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Deploy Qt
+      run: |
+        mkdir deploy
+        copy build\Release\WishmasterDesktop.exe deploy\
+        windeployqt deploy\WishmasterDesktop.exe
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: WishmasterDesktop-Windows
+        path: deploy/
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.*'
+        modules: 'qtmultimedia'
+
+    - name: Clone llama.cpp
+      run: |
+        git clone --depth 1 --branch b7898 https://github.com/ggerganov/llama.cpp external/llama.cpp
+
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_WHISPER=OFF
+
+    - name: Build
+      run: cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+
+    - name: Create DMG
+      run: |
+        cd build
+        macdeployqt WishmasterDesktop.app -dmg
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: WishmasterDesktop-macOS
+        path: build/*.dmg
