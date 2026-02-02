@@ -22,17 +22,17 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 dirs = "5"
 once_cell = "1"
 
-# LLM (placeholder - add llama-cpp-2 later when ready for native integration)
-# llama-cpp-2 = "0.1"  # Requires CMake + C++ compiler on each platform
+# LLM - placeholder (add llama-cpp-2 later when ready for native integration)
+# llama-cpp-2 = "0.1"
 
-# Audio
-cpal = "0.15"
-hound = "3.5"
+# Audio - placeholder (add cpal + hound later for voice features)
+# cpal = "0.15"
+# hound = "3.5"
 
-# Optional: Whisper for STT
+# STT - placeholder (add whisper-rs later)
 # whisper-rs = "0.10"
 
-# Optional: ONNX for TTS
+# TTS - placeholder (add ort later for ONNX models)
 # ort = "2.0"
 
 [features]
