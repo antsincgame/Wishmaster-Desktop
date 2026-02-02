@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { open } from '@tauri-apps/plugin-dialog'
-import { Box, Download, Check, Loader2, HardDrive, RefreshCw } from 'lucide-react'
+import { Box, Check, Loader2, HardDrive, RefreshCw, FolderOpen } from 'lucide-react'
 import { useStore } from '../store'
 import { formatSize } from '../utils'
 import clsx from 'clsx'
@@ -32,22 +31,6 @@ export function ModelsPage() {
     }
   }
 
-  const handleAddModel = async () => {
-    try {
-      const file = await open({
-        multiple: false,
-        filters: [{ name: 'GGUF Models', extensions: ['gguf'] }]
-      })
-      
-      if (file) {
-        await loadModels()
-      }
-    } catch (e) {
-      // User cancelled dialog - this is expected behavior
-      console.debug('File dialog cancelled:', e)
-    }
-  }
-
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
@@ -59,26 +42,38 @@ export function ModelsPage() {
           </p>
         </div>
         
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadModels}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-cyber-border text-gray-400 hover:text-neon-cyan hover:border-neon-cyan/50 transition-all"
-          >
-            <RefreshCw size={16} />
-            Сканировать
-          </button>
-          <button
-            onClick={handleAddModel}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neon-cyan/20 border border-neon-cyan text-neon-cyan hover:bg-neon-cyan/30 transition-all"
-          >
-            <Download size={16} />
-            Добавить модель
-          </button>
-        </div>
+        <button
+          onClick={loadModels}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-cyber-border text-gray-400 hover:text-neon-cyan hover:border-neon-cyan/50 transition-all"
+        >
+          <RefreshCw size={16} />
+          Сканировать
+        </button>
       </header>
 
       {/* Model list */}
       <div className="flex-1 overflow-y-auto p-6">
+        {/* Info about model location */}
+        <div className="mb-6 p-4 rounded-xl border border-neon-cyan/30 bg-neon-cyan/5">
+          <div className="flex items-start gap-3">
+            <FolderOpen className="text-neon-cyan mt-0.5" size={20} />
+            <div>
+              <h3 className="font-bold text-neon-cyan mb-1">Куда положить модели?</h3>
+              <p className="text-sm text-gray-400">
+                Скачайте .gguf модель и положите в одну из папок:
+              </p>
+              <div className="mt-2 space-y-1 font-mono text-xs">
+                <p className="text-neon-green">~/models/</p>
+                <p className="text-neon-green">~/Downloads/</p>
+                <p className="text-neon-green">~/.cache/llama.cpp/</p>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Затем нажмите "Сканировать" для обнаружения
+              </p>
+            </div>
+          </div>
+        </div>
+
         {models.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Box size={64} className="text-gray-600 mb-4" />
@@ -89,13 +84,6 @@ export function ModelsPage() {
               Положите файлы .gguf в папку ~/models или ~/Downloads, 
               затем нажмите "Сканировать"
             </p>
-            <button
-              onClick={handleAddModel}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neon-cyan/20 border border-neon-cyan text-neon-cyan"
-            >
-              <Download size={16} />
-              Выбрать файл модели
-            </button>
           </div>
         ) : (
           <div className="grid gap-4">
