@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Wishmaster Desktop
+Comment=Local AI Assistant with Memory
+Exec=wishmaster-desktop
+Icon=wishmaster-desktop
+Terminal=false
+Type=Application
+Categories=Utility;Development;AI;
+Keywords=AI;LLM;Chat;Assistant;
+StartupWMClass=wishmaster-desktop
