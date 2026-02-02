@@ -5,7 +5,8 @@ import {
   Settings, 
   Mic, 
   Plus,
-  Trash2
+  Trash2,
+  Brain
 } from 'lucide-react'
 import { useStore } from '../store'
 import clsx from 'clsx'
@@ -14,6 +15,7 @@ import clsx from 'clsx'
 const NAV_ITEMS = [
   { path: '/', icon: MessageSquare, label: 'Чат' },
   { path: '/models', icon: Box, label: 'Модели' },
+  { path: '/memory', icon: Brain, label: 'Память & Двойник' },
   { path: '/voice-clone', icon: Mic, label: 'Клон голоса' },
   { path: '/settings', icon: Settings, label: 'Настройки' },
 ] as const

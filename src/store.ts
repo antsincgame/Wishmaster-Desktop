@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 
+// ==================== TYPES ====================
+
 export interface Message {
   id: number
   content: string
@@ -35,6 +37,49 @@ export interface VoiceRecording {
   createdAt: number
 }
 
+// Memory system types
+export interface MemoryEntry {
+  id: number
+  content: string
+  category: string
+  sourceSessionId: number
+  sourceMessageId: number
+  importance: number
+  createdAt: number
+}
+
+export interface UserPersona {
+  id: number
+  writingStyle: string
+  avgMessageLength: number
+  commonPhrases: string
+  topicsOfInterest: string
+  language: string
+  emojiUsage: string
+  tone: string
+  messagesAnalyzed: number
+  lastUpdated: number
+}
+
+export interface GlobalMessage {
+  id: number
+  sessionId: number
+  sessionTitle: string
+  content: string
+  isUser: boolean
+  timestamp: number
+}
+
+export interface DataStats {
+  total_sessions: number
+  total_messages: number
+  user_messages: number
+  assistant_messages: number
+  total_memories: number
+  total_characters: number
+  estimated_tokens: number
+}
+
 interface Settings {
   temperature: number
   maxTokens: number
@@ -46,6 +91,8 @@ interface Settings {
   ttsEnabled: boolean
   modelPaths: string[]
 }
+
+// ==================== STORE ====================
 
 interface AppState {
   // Sessions
@@ -71,6 +118,11 @@ interface AppState {
   // Settings
   settings: Settings
   
+  // Memory System
+  memories: MemoryEntry[]
+  persona: UserPersona | null
+  dataStats: DataStats | null
+  
   // Actions
   loadSettings: () => Promise<void>
   saveSettings: (settings: Partial<Settings>) => Promise<void>
@@ -90,6 +142,20 @@ interface AppState {
   stopGeneration: () => void
   appendToken: (token: string) => void
   finishGeneration: () => void
+  
+  // Memory System Actions
+  searchAllMessages: (query: string, limit?: number) => Promise<GlobalMessage[]>
+  addMemory: (content: string, category: string, importance?: number) => Promise<void>
+  loadMemories: () => Promise<void>
+  deleteMemory: (id: number) => Promise<void>
+  analyzePersona: () => Promise<UserPersona>
+  loadPersona: () => Promise<void>
+  loadDataStats: () => Promise<void>
+  
+  // Export Actions (for fine-tuning / digital twin)
+  exportAlpaca: () => Promise<string>
+  exportShareGPT: () => Promise<string>
+  exportFull: () => Promise<string>
   
   // Voice
   loadVoiceProfiles: () => Promise<void>
@@ -130,8 +196,13 @@ export const useStore = create<AppState>((set, get) => ({
     ttsEnabled: true,
     modelPaths: [] as string[],
   },
+  // Memory system state
+  memories: [],
+  persona: null,
+  dataStats: null,
 
-  // Settings
+  // ==================== Settings ====================
+  
   loadSettings: async () => {
     try {
       const settings = await invoke<Settings>('load_settings')
@@ -152,7 +223,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Models (manual paths only)
+  // ==================== Models ====================
+  
   loadModels: async () => {
     try {
       const paths = await invoke<string[]>('get_model_paths')
@@ -195,7 +267,6 @@ export const useStore = create<AppState>((set, get) => ({
       if (model) {
         set({ currentModel: { ...model, isLoaded: true } })
       } else {
-        // Model not found in list, create minimal entry
         const name = path.split('/').pop()?.replace('.gguf', '') ?? 'Unknown'
         set({ currentModel: { name, path, size: 0, isLoaded: true } })
       }
@@ -216,7 +287,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Sessions
+  // ==================== Sessions ====================
+  
   loadSessions: async () => {
     try {
       const sessions = await invoke<Session[]>('get_sessions')
@@ -266,7 +338,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Chat
+  // ==================== Chat (with Memory) ====================
+  
   sendMessage: async (content) => {
     const { currentSessionId, currentModel, settings, messages } = get()
     
@@ -274,7 +347,6 @@ export const useStore = create<AppState>((set, get) => ({
       throw new Error('No session or model selected')
     }
 
-    // Add user message
     const userMsg: Message = {
       id: Date.now(),
       content,
@@ -295,14 +367,15 @@ export const useStore = create<AppState>((set, get) => ({
         isUser: true 
       })
 
-      // Build prompt with history
-      const history = get().messages.slice(-10)
+      // Build prompt with more history (now using memory system)
+      const history = get().messages.slice(-20) // Increased from 10 to 20
       
       await invoke('generate', {
         prompt: content,
         history: history.map(m => ({ content: m.content, isUser: m.isUser })),
         temperature: settings.temperature,
         maxTokens: settings.maxTokens,
+        sessionId: currentSessionId, // Pass session ID for memory context
       })
     } catch (e) {
       console.error('Failed to send message:', e)
@@ -342,7 +415,6 @@ export const useStore = create<AppState>((set, get) => ({
         pendingResponse: '',
       })
 
-      // Save to DB
       if (currentSessionId) {
         invoke('save_message', {
           sessionId: currentSessionId,
@@ -351,7 +423,6 @@ export const useStore = create<AppState>((set, get) => ({
         }).catch(e => console.error('Failed to save message:', e))
       }
 
-      // Auto-speak if enabled
       if (settings.autoSpeak && settings.ttsEnabled) {
         get().speak(assistantMsg.content).catch(e => 
           console.error('Auto-speak failed:', e)
@@ -362,7 +433,114 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Voice
+  // ==================== MEMORY SYSTEM ====================
+  
+  searchAllMessages: async (query, limit = 20) => {
+    try {
+      return await invoke<GlobalMessage[]>('search_all_messages', { query, limit })
+    } catch (e) {
+      console.error('Failed to search messages:', e)
+      return []
+    }
+  },
+
+  addMemory: async (content, category, importance = 5) => {
+    const { currentSessionId, messages } = get()
+    const lastMessage = messages[messages.length - 1]
+    
+    try {
+      await invoke('add_memory', {
+        content,
+        category,
+        sessionId: currentSessionId || 0,
+        messageId: lastMessage?.id || 0,
+        importance,
+      })
+      await get().loadMemories()
+    } catch (e) {
+      console.error('Failed to add memory:', e)
+      throw e
+    }
+  },
+
+  loadMemories: async () => {
+    try {
+      const memories = await invoke<MemoryEntry[]>('get_all_memories')
+      set({ memories })
+    } catch (e) {
+      console.error('Failed to load memories:', e)
+    }
+  },
+
+  deleteMemory: async (id) => {
+    try {
+      await invoke('delete_memory', { id })
+      await get().loadMemories()
+    } catch (e) {
+      console.error('Failed to delete memory:', e)
+    }
+  },
+
+  analyzePersona: async () => {
+    try {
+      const persona = await invoke<UserPersona>('analyze_persona')
+      set({ persona })
+      return persona
+    } catch (e) {
+      console.error('Failed to analyze persona:', e)
+      throw e
+    }
+  },
+
+  loadPersona: async () => {
+    try {
+      const persona = await invoke<UserPersona | null>('get_user_persona')
+      set({ persona })
+    } catch (e) {
+      console.error('Failed to load persona:', e)
+    }
+  },
+
+  loadDataStats: async () => {
+    try {
+      const dataStats = await invoke<DataStats>('get_data_stats')
+      set({ dataStats })
+    } catch (e) {
+      console.error('Failed to load data stats:', e)
+    }
+  },
+
+  // ==================== EXPORT (for Digital Twin) ====================
+  
+  exportAlpaca: async () => {
+    try {
+      return await invoke<string>('export_to_file', { format: 'alpaca' })
+    } catch (e) {
+      console.error('Failed to export Alpaca:', e)
+      throw e
+    }
+  },
+
+  exportShareGPT: async () => {
+    try {
+      return await invoke<string>('export_to_file', { format: 'sharegpt' })
+    } catch (e) {
+      console.error('Failed to export ShareGPT:', e)
+      throw e
+    }
+  },
+
+  exportFull: async () => {
+    try {
+      return await invoke<string>('export_to_file', { format: 'full' })
+    } catch (e) {
+      console.error('Failed to export full:', e)
+      throw e
+    }
+  },
+
+  // ==================== Voice ====================
+  
   loadVoiceProfiles: async () => {
     try {
       const profiles = await invoke<VoiceProfile[]>('get_voice_profiles')
@@ -408,7 +586,6 @@ export const useStore = create<AppState>((set, get) => ({
   deleteVoiceProfile: async (id) => {
     try {
       await invoke('delete_voice_profile', { id })
-      // If deleted profile was selected, clear selection
       if (get().currentVoice?.id === id) {
         set({ currentVoice: null })
       }
@@ -446,8 +623,6 @@ export const useStore = create<AppState>((set, get) => ({
   speak: async (text, voiceId) => {
     set({ isSpeaking: true })
     try {
-      // Use passed voiceId or fall back to currentVoice
-      // Pass null instead of undefined for Rust Option<i64>
       const id = voiceId ?? get().currentVoice?.id ?? null
       await invoke('speak', { text, voiceId: id })
     } catch (e) {

@@ -43,6 +43,7 @@ fn main() {
             voice::init();
             
             println!("🧞 Wishmaster Desktop started!");
+            println!("📚 Memory system active - all conversations will be remembered");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -62,9 +63,26 @@ fn main() {
             // Messages
             commands::get_messages,
             commands::save_message,
-            // Generation
+            // Generation (with memory)
             commands::generate,
             commands::stop_generation,
+            // MEMORY SYSTEM
+            commands::search_all_messages,
+            commands::get_recent_global_messages,
+            commands::add_memory,
+            commands::get_all_memories,
+            commands::get_memories_by_category,
+            commands::get_top_memories,
+            commands::delete_memory,
+            // USER PERSONA (digital twin)
+            commands::get_user_persona,
+            commands::analyze_persona,
+            // EXPORT (for fine-tuning)
+            commands::export_all_data,
+            commands::export_alpaca_format,
+            commands::export_sharegpt_format,
+            commands::get_data_stats,
+            commands::export_to_file,
             // Voice
             commands::get_voice_profiles,
             commands::create_voice_profile,

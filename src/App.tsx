@@ -5,17 +5,22 @@ import { ChatPage } from './pages/ChatPage'
 import { ModelsPage } from './pages/ModelsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { VoiceClonePage } from './pages/VoiceClonePage'
+import { MemoryPage } from './pages/MemoryPage'
 import { useStore } from './store'
 
 function App() {
-  const { loadSettings, loadModels, loadSessions } = useStore()
+  const { loadSettings, loadModels, loadSessions, loadMemories, loadPersona, loadDataStats } = useStore()
 
   useEffect(() => {
     // Initialize app
     loadSettings()
     loadModels()
     loadSessions()
-  }, [loadSettings, loadModels, loadSessions])
+    // Initialize memory system
+    loadMemories()
+    loadPersona()
+    loadDataStats()
+  }, [loadSettings, loadModels, loadSessions, loadMemories, loadPersona, loadDataStats])
 
   return (
     <BrowserRouter>
@@ -30,6 +35,7 @@ function App() {
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/voice-clone" element={<VoiceClonePage />} />
+            <Route path="/memory" element={<MemoryPage />} />
           </Routes>
         </main>
       </div>
