@@ -9,8 +9,7 @@ pub fn init() {
 }
 
 /// Start recording user's voice
-/// Returns: audio file path on success
-pub fn start_recording() -> Result<String, String> {
+pub fn start_recording() -> Result<(), String> {
     if IS_RECORDING.load(Ordering::SeqCst) {
         return Err("Already recording".to_string());
     }
@@ -18,10 +17,9 @@ pub fn start_recording() -> Result<String, String> {
     IS_RECORDING.store(true, Ordering::SeqCst);
     
     // TODO: Implement actual audio recording using cpal
-    // For now, simulate recording
     println!("Started recording...");
     
-    Ok("recording_started".to_string())
+    Ok(())
 }
 
 /// Stop recording and return transcription
