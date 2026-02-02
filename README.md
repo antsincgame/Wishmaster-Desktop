@@ -1,112 +1,130 @@
 # 🧞 Wishmaster Desktop
 
-**Локальный AI-ассистент с поддержкой llama.cpp для Windows, Linux и macOS**
+**Локальный AI-ассистент с клонированием голоса**
 
-![Qt](https://img.shields.io/badge/Qt-6.5+-41CD52?style=flat&logo=qt)
-![C++](https://img.shields.io/badge/C++-17-00599C?style=flat&logo=cplusplus)
+![Tauri](https://img.shields.io/badge/Tauri-2.0-FFC131?style=flat&logo=tauri)
+![Rust](https://img.shields.io/badge/Rust-1.75+-DEA584?style=flat&logo=rust)
+![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 ## ✨ Возможности
 
-- 💬 **Чат с LLM** — поддержка любых GGUF моделей через llama.cpp
-- 🎤 **Голосовой ввод** — распознавание речи через whisper.cpp
-- 🔊 **Озвучка ответов** — TTS через Silero/Piper (ONNX)
-- 🧬 **AI Clone** — создание цифрового клона из ваших сообщений
-- 📁 **Управление моделями** — сканирование и добавление моделей
+- 💬 **Мульти-модель чат** — выбор любой GGUF модели (Qwen, DeepSeek, Llama, Gemma)
+- 🎤 **Голосовой ввод** — распознавание речи через Whisper.cpp
+- 🔊 **Клонирование голоса** — создайте AI-копию своего голоса за 6 секунд (Coqui XTTS)
 - 📜 **История чатов** — сохранение всех диалогов в SQLite
-- 🎨 **Cyberpunk UI** — тёмная тема с неоновыми акцентами
+- 🎨 **Cyberpunk UI** — тёмная тема с неоновыми эффектами
+- 🚀 **Компактный** — ~10 MB бинарник (vs 150 MB Electron)
 
 ## 🖥️ Платформы
 
 | Платформа | Статус |
 |-----------|--------|
-| Linux | ✅ Поддерживается |
-| Windows | ✅ Поддерживается |
-| macOS | ✅ Поддерживается |
+| 🐧 Linux | ✅ Поддерживается |
+| 🪟 Windows | ✅ Поддерживается |
+| 🍎 macOS | ✅ Поддерживается |
 
-## 📋 Требования
+## 🛠️ Tech Stack
 
-- Qt 6.5+
-- CMake 3.16+
-- C++17 компилятор
-- (Опционально) llama.cpp
-- (Опционально) whisper.cpp
-- (Опционально) ONNX Runtime
+```
+Frontend:  React 18 + TypeScript + Tailwind CSS
+Backend:   Tauri 2.0 + Rust
+LLM:       llama-cpp-2 (Rust bindings)
+STT:       Whisper.cpp
+TTS:       Coqui XTTS (клонирование голоса)
+Database:  SQLite (rusqlite)
+```
 
-## 🔧 Сборка
+## 📦 Рекомендуемые модели
 
-### Linux
+| Модель | RAM | Описание |
+|--------|-----|----------|
+| **Qwen2.5 7B Q4_K_M** | ~5 GB | Лучший русский язык |
+| **DeepSeek 7B Q4_K_M** | ~3.5 GB | Лучший для кода |
+| **Gemma 3n** | ~2 GB | Компактная, быстрая |
+| **Llama 3.1 8B Q4_K_M** | ~6 GB | Длинный контекст |
+
+## 🔧 Установка
+
+### Предварительные требования
+
+- [Node.js](https://nodejs.org/) 18+
+- [Rust](https://rustup.rs/) 1.75+
+- [Tauri Prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites)
+
+### Сборка из исходников
 
 ```bash
-# Установка зависимостей (Ubuntu/Debian)
-sudo apt install qt6-base-dev qt6-multimedia-dev cmake build-essential
+# Клонирование
+git clone https://github.com/antsincgame/Wishmaster-Desktop.git
+cd Wishmaster-Desktop
 
-# Клонирование и сборка
-git clone https://github.com/your/wishmaster-desktop.git
-cd wishmaster-desktop
+# Установка зависимостей
+npm install
 
-# Получение llama.cpp
-git clone https://github.com/ggerganov/llama.cpp external/llama.cpp
-git clone https://github.com/ggerganov/whisper.cpp external/whisper.cpp
+# Запуск в режиме разработки
+npm run tauri:dev
 
-# Сборка
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
+# Сборка релиза
+npm run tauri:build
+```
 
-# Запуск
-./WishmasterDesktop
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget \
+    libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
 ### Windows
 
-```powershell
-# Установите Qt 6.5+ и CMake через официальные установщики
-# или через vcpkg/chocolatey
-
-# Сборка
-mkdir build
-cd build
-cmake .. -G "Visual Studio 17 2022" -A x64
-cmake --build . --config Release
-```
+Установите [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) с компонентом "Desktop development with C++".
 
 ### macOS
 
 ```bash
-# Установка через Homebrew
-brew install qt@6 cmake
-
-# Сборка
-mkdir build && cd build
-cmake .. -DCMAKE_PREFIX_PATH=$(brew --prefix qt@6)
-make -j$(sysctl -n hw.ncpu)
+xcode-select --install
 ```
+
+## 🎤 Клонирование голоса
+
+Wishmaster использует **Coqui XTTS** для создания AI-клона вашего голоса:
+
+1. Запишите ~6 секунд своей речи
+2. AI извлечёт "отпечаток" вашего голоса
+3. Теперь любой текст может быть озвучен вашим голосом!
+
+**Качество русского языка:** ⭐⭐⭐⭐ (CER 2.7, UTMOS 3.04)
 
 ## 📁 Структура проекта
 
 ```
 wishmaster-desktop/
-├── CMakeLists.txt          # Главный файл сборки
-├── src/
-│   ├── main.cpp            # Точка входа
-│   ├── mainwindow.cpp/h    # Главное окно
-│   ├── chatwidget.cpp/h    # Виджет чата
-│   ├── settingsdialog.cpp/h # Диалог настроек
-│   ├── modelmanager.cpp/h  # Управление моделями
-│   ├── database.cpp/h      # SQLite база данных
-│   ├── llm/
-│   │   └── llamaengine.cpp/h   # llama.cpp интеграция
-│   ├── voice/
-│   │   ├── ttsengine.cpp/h     # Text-to-Speech
-│   │   └── sttengine.cpp/h     # Speech-to-Text
-│   └── persona/
-│       └── personaanalyzer.cpp/h # AI Clone анализатор
-├── external/
-│   ├── llama.cpp/          # Субмодуль llama.cpp
-│   └── whisper.cpp/        # Субмодуль whisper.cpp
-└── resources/
-    └── resources.qrc       # Qt ресурсы
+├── package.json              # NPM конфигурация
+├── vite.config.ts            # Vite сборка
+├── tailwind.config.js        # Tailwind тема
+├── src/                      # React frontend
+│   ├── main.tsx              # Точка входа
+│   ├── App.tsx               # Корневой компонент
+│   ├── store.ts              # Zustand state management
+│   ├── components/           # UI компоненты
+│   │   ├── Sidebar.tsx
+│   │   ├── ChatMessage.tsx
+│   │   └── ChatInput.tsx
+│   └── pages/                # Страницы
+│       ├── ChatPage.tsx
+│       ├── ModelsPage.tsx
+│       ├── VoiceClonePage.tsx
+│       └── SettingsPage.tsx
+└── src-tauri/                # Rust backend
+    ├── Cargo.toml            # Rust зависимости
+    ├── tauri.conf.json       # Tauri конфигурация
+    └── src/
+        ├── main.rs           # Точка входа
+        ├── commands.rs       # Tauri команды
+        ├── database.rs       # SQLite операции
+        ├── llm.rs            # llama-cpp-2 интеграция
+        └── voice.rs          # STT/TTS с клонированием
 ```
 
 ## ⚙️ Настройки
@@ -114,27 +132,16 @@ wishmaster-desktop/
 | Параметр | Описание | По умолчанию |
 |----------|----------|--------------|
 | Temperature | Креативность ответов | 0.7 |
-| Max Tokens | Максимум токенов в ответе | 512 |
-| Context Length | Размер контекстного окна | 2048 |
-| TTS Engine | Движок озвучки | Silero |
-| STT Language | Язык распознавания | Русский |
-
-## 🧬 AI Clone
-
-Wishmaster может создать ваш цифровой клон:
-
-1. Напишите минимум 20 сообщений в чат
-2. Откройте **Настройки → AI Clone**
-3. Нажмите **"Анализировать сообщения"**
-4. Переключитесь в режим **Clone**
-
-AI будет отвечать в вашем стиле!
+| Max Tokens | Макс. длина ответа | 512 |
+| Context Length | Память AI | 2048 |
+| Auto Speak | Озвучивать ответы | Выкл |
 
 ## 🔗 Связанные проекты
 
 - [Wishmaster Android](https://github.com/antsincgame/Jared) — мобильная версия
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) — движок LLM
 - [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — движок STT
+- [Coqui XTTS](https://github.com/coqui-ai/TTS) — клонирование голоса
 
 ## 📄 Лицензия
 
@@ -142,7 +149,11 @@ MIT License
 
 ## 🙏 Благодарности
 
+- [Tauri](https://tauri.app/) — фреймворк для Desktop приложений
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) — Georgi Gerganov
-- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — Georgi Gerganov
-- [Silero Models](https://github.com/snakers4/silero-models) — Alexander Veysov
-- [Qt Framework](https://www.qt.io/) — The Qt Company
+- [Coqui TTS](https://github.com/coqui-ai/TTS) — Coqui AI Team
+- [Qwen](https://github.com/QwenLM/Qwen2.5) — Alibaba Cloud
+
+---
+
+**Made with 🦀 Rust + ⚛️ React + 💜 Love**

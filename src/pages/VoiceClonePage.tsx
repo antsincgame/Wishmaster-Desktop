@@ -1,0 +1,292 @@
+import { useEffect, useState, useRef } from 'react'
+import { Mic, Square, Play, Pause, Trash2, Plus, Upload, Volume2 } from 'lucide-react'
+import { useStore } from '../store'
+import clsx from 'clsx'
+
+export function VoiceClonePage() {
+  const { 
+    voiceProfiles, 
+    currentVoice,
+    loadVoiceProfiles,
+    createVoiceProfile,
+    deleteVoiceProfile,
+    speak,
+    isSpeaking,
+    stopSpeaking
+  } = useStore()
+
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordedAudio, setRecordedAudio] = useState<string | null>(null)
+  const [newProfileName, setNewProfileName] = useState('')
+  const [testText, setTestText] = useState('Привет! Это тест клонированного голоса.')
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+
+  useEffect(() => {
+    loadVoiceProfiles()
+  }, [])
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      chunksRef.current = []
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data)
+        }
+      }
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        const url = URL.createObjectURL(blob)
+        setRecordedAudio(url)
+        stream.getTracks().forEach(track => track.stop())
+      }
+
+      mediaRecorder.start()
+      setIsRecording(true)
+    } catch (e) {
+      console.error('Failed to start recording:', e)
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+    }
+  }
+
+  const handleCreateProfile = async () => {
+    if (!newProfileName.trim() || !recordedAudio) return
+
+    try {
+      await createVoiceProfile(newProfileName.trim(), recordedAudio)
+      setNewProfileName('')
+      setRecordedAudio(null)
+      setShowCreateDialog(false)
+    } catch (e) {
+      console.error('Failed to create voice profile:', e)
+    }
+  }
+
+  const handleTestVoice = async (voiceId?: number) => {
+    if (isSpeaking) {
+      stopSpeaking()
+    } else {
+      await speak(testText)
+    }
+  }
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Header */}
+      <header className="px-6 py-4 border-b border-cyber-border bg-cyber-surface">
+        <h2 className="text-xl font-bold text-neon-cyan">🎤 Клонирование голоса</h2>
+        <p className="text-xs text-gray-500">
+          Создайте AI-клон своего голоса с помощью Coqui XTTS
+        </p>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        {/* Info box */}
+        <div className="p-4 rounded-xl border border-neon-yellow/30 bg-neon-yellow/5 mb-6">
+          <h3 className="text-sm font-bold text-neon-yellow mb-2">
+            ℹ️ Как это работает
+          </h3>
+          <p className="text-sm text-gray-400">
+            Запишите ~6 секунд своего голоса, и AI создаст его цифровую копию.
+            Эта копия сможет озвучивать любой текст вашим голосом!
+          </p>
+        </div>
+
+        {/* Create new profile */}
+        <div className="mb-8">
+          <button
+            onClick={() => setShowCreateDialog(true)}
+            className="flex items-center gap-2 px-4 py-3 rounded-xl bg-neon-green/20 border border-neon-green text-neon-green hover:bg-neon-green/30 transition-all w-full justify-center"
+          >
+            <Plus size={20} />
+            Создать новый голосовой профиль
+          </button>
+        </div>
+
+        {/* Create dialog */}
+        {showCreateDialog && (
+          <div className="mb-8 p-6 rounded-xl border border-neon-cyan/30 bg-cyber-surface">
+            <h3 className="text-lg font-bold text-neon-cyan mb-4">
+              Создание голосового профиля
+            </h3>
+
+            {/* Name input */}
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-2">
+                Название профиля
+              </label>
+              <input
+                type="text"
+                value={newProfileName}
+                onChange={(e) => setNewProfileName(e.target.value)}
+                placeholder="Мой голос"
+                className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-white focus:border-neon-cyan focus:outline-none"
+              />
+            </div>
+
+            {/* Recording section */}
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-2">
+                Запись голоса (минимум 6 секунд)
+              </label>
+              
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={clsx(
+                    'flex items-center gap-2 px-6 py-3 rounded-xl border transition-all',
+                    isRecording
+                      ? 'bg-red-500/20 border-red-500 text-red-500 animate-pulse'
+                      : 'border-neon-magenta text-neon-magenta hover:bg-neon-magenta/10'
+                  )}
+                >
+                  {isRecording ? (
+                    <>
+                      <Square size={20} />
+                      Остановить запись
+                    </>
+                  ) : (
+                    <>
+                      <Mic size={20} />
+                      Начать запись
+                    </>
+                  )}
+                </button>
+
+                {recordedAudio && (
+                  <div className="flex items-center gap-2">
+                    <audio src={recordedAudio} controls className="h-10" />
+                    <button
+                      onClick={() => setRecordedAudio(null)}
+                      className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {isRecording && (
+                <p className="text-sm text-red-400 mt-2 animate-pulse">
+                  🔴 Запись идёт... Говорите естественно, минимум 6 секунд
+                </p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCreateProfile}
+                disabled={!newProfileName.trim() || !recordedAudio}
+                className={clsx(
+                  'flex-1 px-4 py-2 rounded-lg border transition-all',
+                  newProfileName.trim() && recordedAudio
+                    ? 'bg-neon-cyan/20 border-neon-cyan text-neon-cyan hover:bg-neon-cyan/30'
+                    : 'border-gray-600 text-gray-600 cursor-not-allowed'
+                )}
+              >
+                Создать профиль
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreateDialog(false)
+                  setRecordedAudio(null)
+                  setNewProfileName('')
+                }}
+                className="px-4 py-2 rounded-lg border border-cyber-border text-gray-400 hover:text-white"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Voice profiles list */}
+        <div>
+          <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
+            Ваши голосовые профили
+          </h3>
+
+          {voiceProfiles.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <Volume2 size={48} className="mx-auto mb-4 opacity-50" />
+              <p>Нет голосовых профилей</p>
+              <p className="text-sm">Создайте свой первый профиль выше</p>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {voiceProfiles.map((profile) => (
+                <div
+                  key={profile.id}
+                  className={clsx(
+                    'p-4 rounded-xl border transition-all',
+                    currentVoice?.id === profile.id
+                      ? 'bg-neon-magenta/10 border-neon-magenta/50'
+                      : 'bg-cyber-surface border-cyber-border'
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-white">{profile.name}</h4>
+                      <p className="text-xs text-gray-500">
+                        Создан: {new Date(profile.createdAt).toLocaleDateString('ru-RU')}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleTestVoice(profile.id)}
+                        className={clsx(
+                          'flex items-center gap-2 px-3 py-2 rounded-lg border transition-all',
+                          isSpeaking
+                            ? 'border-red-500 text-red-500'
+                            : 'border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10'
+                        )}
+                      >
+                        {isSpeaking ? <Pause size={16} /> : <Play size={16} />}
+                        {isSpeaking ? 'Стоп' : 'Тест'}
+                      </button>
+                      
+                      <button
+                        onClick={() => deleteVoiceProfile(profile.id)}
+                        className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Test text */}
+        <div className="mt-8 p-4 rounded-xl border border-cyber-border bg-cyber-surface">
+          <label className="block text-sm text-gray-400 mb-2">
+            Текст для тестирования голоса
+          </label>
+          <textarea
+            value={testText}
+            onChange={(e) => setTestText(e.target.value)}
+            rows={3}
+            className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-white resize-none focus:border-neon-cyan focus:outline-none"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
