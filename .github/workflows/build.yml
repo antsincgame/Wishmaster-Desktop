@@ -47,7 +47,7 @@ jobs:
       with:
         cuda: '12.2.0'
         method: 'network'
-        sub-packages: '["nvcc", "cudart"]'
+        sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev"]'
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -125,7 +125,13 @@ jobs:
       with:
         cuda: '12.2.0'
         method: 'network'
-        sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev"]'
+        sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "visual_studio_integration"]'
+
+    - name: Setup CUDA environment
+      run: |
+        echo "CUDA_PATH=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}" >> $env:GITHUB_ENV
+        echo "CUDACXX=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\bin\nvcc.exe" >> $env:GITHUB_ENV
+      shell: pwsh
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
