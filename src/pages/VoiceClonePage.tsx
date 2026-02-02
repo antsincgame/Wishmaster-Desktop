@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { Mic, Square, Play, Pause, Trash2, Plus, Volume2, Check } from 'lucide-react'
 import { useStore } from '../store'
+import { formatDate } from '../utils'
 import clsx from 'clsx'
 
 export function VoiceClonePage() {
@@ -255,7 +256,7 @@ export function VoiceClonePage() {
                       <div>
                         <h4 className="font-bold text-white">{profile.name}</h4>
                         <p className="text-xs text-gray-500">
-                          Создан: {new Date(profile.createdAt).toLocaleDateString('ru-RU')}
+                          Создан: {formatDate(profile.createdAt)}
                         </p>
                       </div>
                     </div>

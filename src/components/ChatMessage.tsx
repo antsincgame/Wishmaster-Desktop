@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react'
 import { Message } from '../store'
+import { formatTime } from '../utils'
 import clsx from 'clsx'
 
 interface Props {
@@ -7,13 +8,7 @@ interface Props {
 }
 
 export const ChatMessage = memo(function ChatMessage({ message }: Props) {
-  // Memoize date formatting to avoid recalculation on every render
-  const formattedTime = useMemo(() => 
-    new Date(message.timestamp).toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }), [message.timestamp]
-  )
+  const formattedTime = useMemo(() => formatTime(message.timestamp), [message.timestamp])
   return (
     <div className={clsx(
       'flex',

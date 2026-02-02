@@ -1,11 +1,16 @@
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
 
-// Placeholder for llama-cpp-2 integration
-// In production, this would use the llama-cpp-2 crate
-
 static MODEL_PATH: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 static CONTEXT_LENGTH: OnceCell<Mutex<usize>> = OnceCell::new();
+
+/// Stop sequences for ChatML format
+const STOP_SEQUENCES: &[&str] = &[
+    "<|im_end|>",
+    "<|im_start|>",
+    "### User:",
+    "\nUser:",
+];
 
 pub fn init() {
     MODEL_PATH.set(Mutex::new(None)).ok();
@@ -14,11 +19,6 @@ pub fn init() {
 }
 
 pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
-    // In production, this would:
-    // 1. Load the GGUF model using llama-cpp-2
-    // 2. Create a context with the specified length
-    // 3. Store the model and context in thread-safe containers
-    
     println!("Loading model: {} with context: {}", path, context_length);
     
     // Check if file exists
@@ -28,14 +28,18 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
     
     // Store model path
     if let Some(model_path) = MODEL_PATH.get() {
-        *model_path.lock().unwrap() = Some(path.to_string());
+        if let Ok(mut guard) = model_path.lock() {
+            *guard = Some(path.to_string());
+        }
     }
     
     if let Some(ctx_len) = CONTEXT_LENGTH.get() {
-        *ctx_len.lock().unwrap() = context_length;
+        if let Ok(mut guard) = ctx_len.lock() {
+            *guard = context_length;
+        }
     }
     
-    // Simulate loading time
+    // TODO: Implement actual model loading using llama-cpp-2
     std::thread::sleep(std::time::Duration::from_millis(500));
     
     println!("Model loaded successfully!");
@@ -44,14 +48,17 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
 
 pub fn unload_model() {
     if let Some(model_path) = MODEL_PATH.get() {
-        *model_path.lock().unwrap() = None;
+        if let Ok(mut guard) = model_path.lock() {
+            *guard = None;
+        }
     }
     println!("Model unloaded");
 }
 
 pub fn is_loaded() -> bool {
     MODEL_PATH.get()
-        .map(|m| m.lock().unwrap().is_some())
+        .and_then(|m| m.lock().ok())
+        .map(|guard| guard.is_some())
         .unwrap_or(false)
 }
 
@@ -63,38 +70,25 @@ where
         return Err("Model not loaded".to_string());
     }
     
-    // In production, this would:
-    // 1. Tokenize the prompt
-    // 2. Run inference with the model
-    // 3. Sample tokens with the specified temperature
-    // 4. Detokenize and call callback for each token
-    // 5. Check for stop sequences
-    
-    println!("Generating response for prompt ({} chars) with temp={} max_tokens={}", 
+    println!("Generating response for prompt ({} chars) temp={} max_tokens={}", 
              prompt.len(), temperature, max_tokens);
     
-    // Simulate generation with placeholder response
+    // TODO: Implement actual generation using llama-cpp-2
+    // Placeholder response
     let response = "Привет! Я Wishmaster — ваш локальный AI-ассистент. \
                    Я работаю полностью оффлайн благодаря llama.cpp. \
                    Чем могу помочь?";
     
-    // Stream tokens
     let mut accumulated = String::new();
+    
     for word in response.split_whitespace() {
         let token = format!("{} ", word);
         accumulated.push_str(&token);
         
         // Check for stop sequences
-        let mut should_stop = false;
-        for stop in STOP_SEQUENCES {
-            if accumulated.contains(stop) {
-                accumulated = accumulated.replace(stop, "");
-                should_stop = true;
-                break;
-            }
-        }
+        let should_stop = STOP_SEQUENCES.iter().any(|seq| accumulated.contains(seq));
         
-        // Simulate generation speed
+        // Simulate generation delay
         std::thread::sleep(std::time::Duration::from_millis(50));
         
         if !callback(token) {
@@ -109,24 +103,4 @@ where
     }
     
     Ok(())
-}
-
-// Stop sequences for ChatML format
-pub const STOP_SEQUENCES: &[&str] = &[
-    "<|im_end|>",
-    "<|im_start|>",
-    "### User:",
-    "\nUser:",
-];
-
-pub fn clean_response(text: &str) -> String {
-    let mut result = text.to_string();
-    
-    for stop in STOP_SEQUENCES {
-        if let Some(pos) = result.find(stop) {
-            result.truncate(pos);
-        }
-    }
-    
-    result.trim().to_string()
 }

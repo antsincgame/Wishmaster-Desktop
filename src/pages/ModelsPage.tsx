@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { Box, Download, Check, Loader2, HardDrive, RefreshCw } from 'lucide-react'
 import { useStore } from '../store'
+import { formatSize } from '../utils'
 import clsx from 'clsx'
 
 export function ModelsPage() {
@@ -40,12 +41,6 @@ export function ModelsPage() {
     if (file) {
       await loadModels()
     }
-  }
-
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
   }
 
   return (

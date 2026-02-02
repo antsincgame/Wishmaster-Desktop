@@ -2,7 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar */
+/* ========================
+   SCROLLBAR
+   ======================== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -22,13 +24,17 @@
   background: #00cccc;
 }
 
-/* Selection */
+/* ========================
+   SELECTION
+   ======================== */
 ::selection {
   background: #00ffff;
   color: #0a0a0f;
 }
 
-/* Glow effects */
+/* ========================
+   GLOW EFFECTS (used)
+   ======================== */
 .glow-cyan {
   box-shadow: 0 0 20px rgba(0, 255, 255, 0.3), 0 0 40px rgba(0, 255, 255, 0.1);
 }
@@ -41,16 +47,16 @@
   box-shadow: 0 0 20px rgba(0, 255, 65, 0.3), 0 0 40px rgba(0, 255, 65, 0.1);
 }
 
-/* Text glow */
+/* ========================
+   TEXT GLOW (used)
+   ======================== */
 .text-glow-cyan {
   text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;
 }
 
-.text-glow-magenta {
-  text-shadow: 0 0 10px #ff0080, 0 0 20px #ff0080;
-}
-
-/* Animations */
+/* ========================
+   ANIMATIONS
+   ======================== */
 @keyframes pulse-border {
   0%, 100% { border-color: rgba(0, 255, 255, 0.5); }
   50% { border-color: rgba(0, 255, 255, 1); }
@@ -60,34 +66,30 @@
   animation: pulse-border 2s ease-in-out infinite;
 }
 
-/* Typing indicator */
-.typing-dots::after {
-  content: '';
-  animation: typing-dots 1.5s steps(4) infinite;
-}
-
-@keyframes typing-dots {
-  0% { content: ''; }
-  25% { content: '.'; }
-  50% { content: '..'; }
-  75% { content: '...'; }
-  100% { content: ''; }
-}
-
-/* Scanlines effect */
-.scanlines::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.15),
-    rgba(0, 0, 0, 0.15) 1px,
-    transparent 1px,
-    transparent 2px
-  );
-  pointer-events: none;
+/* ========================
+   UTILITY COMPONENTS
+   ======================== */
+@layer components {
+  /* Card/Section base style */
+  .cyber-card {
+    @apply p-4 rounded-xl border border-cyber-border bg-cyber-surface;
+  }
+  
+  /* Primary button */
+  .btn-primary {
+    @apply px-4 py-2 rounded-lg border border-neon-cyan text-neon-cyan 
+           hover:bg-neon-cyan/10 transition-all;
+  }
+  
+  /* Secondary button */
+  .btn-secondary {
+    @apply px-4 py-2 rounded-lg border border-cyber-border text-gray-400 
+           hover:text-neon-cyan hover:border-neon-cyan/50 transition-all;
+  }
+  
+  /* Danger button */
+  .btn-danger {
+    @apply px-4 py-2 rounded-lg border border-red-500/50 text-red-400 
+           hover:bg-red-500/10 transition-all;
+  }
 }
