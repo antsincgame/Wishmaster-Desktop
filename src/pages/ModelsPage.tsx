@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, Check, Loader2, HardDrive, Plus, Trash2, FolderOpen } from 'lucide-react'
+import { Box, Check, Loader2, Plus, Trash2, FolderOpen } from 'lucide-react'
 import { useStore } from '../store'
 import clsx from 'clsx'
 
