@@ -129,6 +129,8 @@ jobs:
   build-macos:
     name: Build macOS
     runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "10.15"
     steps:
     - uses: actions/checkout@v4
 

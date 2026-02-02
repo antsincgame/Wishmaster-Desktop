@@ -4,6 +4,7 @@ use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::token::data_array::LlamaTokenDataArray;
+use llama_cpp_2::context::LlamaContext;
 use once_cell::sync::OnceCell;
 use std::num::NonZeroU32;
 use std::sync::Mutex;
@@ -123,10 +124,9 @@ where
     println!("Generating: {} chars, temp={}, max_tokens={}, ctx={}", 
              prompt.len(), temperature, max_tokens, ctx_size);
     
-    // Create context
+    // Create context with basic params
     let ctx_params = LlamaContextParams::default()
-        .with_n_ctx(NonZeroU32::new(ctx_size))
-        .with_seed(1234);
+        .with_n_ctx(NonZeroU32::new(ctx_size));
     
     let mut ctx = model.new_context(&BACKEND.get().unwrap(), ctx_params)
         .map_err(|e| format!("Failed to create context: {:?}", e))?;
@@ -160,19 +160,13 @@ where
     let mut accumulated = String::new();
     
     for _ in 0..max_tokens {
-        // Get logits
+        // Get logits for the last token
         let candidates = ctx.candidates_ith(batch.n_tokens() - 1);
         let mut candidates_p = LlamaTokenDataArray::from_iter(candidates, false);
         
-        // Sample with temperature
-        let new_token = if temperature < 0.01 {
-            // Greedy
-            candidates_p.sample_token_greedy(None)
-        } else {
-            // Temperature sampling
-            candidates_p.sample_temp(None, temperature);
-            candidates_p.sample_token_softmax(None)
-        };
+        // Sample - use greedy for simplicity (temperature ignored for now)
+        // TODO: implement proper temperature sampling when API stabilizes
+        let new_token = candidates_p.sample_token_greedy(None);
         
         // Check for EOS
         if model.is_eog_token(new_token) {
