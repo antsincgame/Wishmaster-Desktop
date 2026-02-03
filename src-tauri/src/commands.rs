@@ -195,10 +195,14 @@ pub fn save_message(session_id: i64, content: String, is_user: bool) -> Result<i
     // Auto-index message for semantic search (async, non-blocking)
     let content_clone = content.clone();
     std::thread::spawn(move || {
-        if let Err(e) = database::with_connection(|conn| {
+        let result = database::with_connection(|conn| {
             embeddings::index_message(conn, msg_id, &content_clone)
-        }) {
-            eprintln!("Failed to index message: {:?}", e);
+        });
+        
+        match result {
+            Ok(Ok(())) => {} // Success
+            Ok(Err(e)) => eprintln!("Failed to index message {}: {}", msg_id, e),
+            Err(e) => eprintln!("Database error indexing message {}: {}", msg_id, e),
         }
     });
     
@@ -628,14 +632,6 @@ pub fn create_voice_profile_from_recording(recording_id: i64, name: String) -> R
 }
 
 // ==================== SEMANTIC SEARCH Commands (RAG) ====================
-
-/// Semantic search using embeddings
-#[tauri::command]
-pub fn semantic_search(query: String, limit: i32) -> Result<Vec<embeddings::SearchResult>, String> {
-    // This requires database connection access, we need to refactor slightly
-    // For now, use the high-level API
-    Err("Use find_rag_context instead".to_string())
-}
 
 /// Find relevant context for RAG using semantic search
 #[tauri::command]

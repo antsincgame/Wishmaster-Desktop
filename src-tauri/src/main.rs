@@ -99,7 +99,6 @@ fn main() {
             commands::get_data_stats,
             commands::export_to_file,
             // SEMANTIC SEARCH (RAG)
-            commands::semantic_search,
             commands::find_rag_context,
             commands::index_all_messages,
             commands::get_embedding_stats,

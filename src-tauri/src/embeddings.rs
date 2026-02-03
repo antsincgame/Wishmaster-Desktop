@@ -6,7 +6,7 @@ use std::sync::Mutex;
 
 static EMBEDDER: OnceCell<Mutex<TextEmbedding>> = OnceCell::new();
 
-const EMBEDDING_DIM: usize = 384; // multilingual-e5-small dimension
+const EMBEDDING_DIM: usize = 384; // multilingual-e5-small dimension (used in stats)
 
 // ==================== Types ====================
 
@@ -20,6 +20,7 @@ pub struct EmbeddingEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub source_type: String,
     pub source_id: i64,
@@ -50,37 +51,18 @@ pub fn init_embedder() -> Result<(), String> {
     Ok(())
 }
 
-/// Create embeddings table in SQLite
-pub fn init_embeddings_table(conn: &Connection) -> Result<()> {
-    conn.execute_batch(r#"
-        -- Vector embeddings storage
-        CREATE TABLE IF NOT EXISTS embeddings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_type TEXT NOT NULL,           -- 'message', 'memory', 'document'
-            source_id INTEGER NOT NULL,
-            content_hash TEXT NOT NULL,          -- To avoid re-embedding same content
-            vector BLOB NOT NULL,                -- Float32 array as bytes
-            created_at INTEGER NOT NULL,
-            UNIQUE(source_type, source_id)
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
-        CREATE INDEX IF NOT EXISTS idx_embeddings_hash ON embeddings(content_hash);
-    "#)?;
-    
-    Ok(())
-}
+// Note: embeddings table is created in database.rs during init
 
 // ==================== Embedding Operations ====================
 
-/// Generate embedding for text
-pub fn embed_text(text: &str) -> Result<Vec<f32>, String> {
+/// Generate embedding for search query (use "query:" prefix)
+pub fn embed_query(text: &str) -> Result<Vec<f32>, String> {
     let embedder = EMBEDDER.get()
         .ok_or("Embedder not initialized")?
         .lock()
         .map_err(|e| format!("Failed to lock embedder: {}", e))?;
 
-    // Prefix for better retrieval (e5 model recommendation)
+    // E5 model: use "query:" prefix for search queries
     let prefixed = format!("query: {}", text);
     
     let embeddings = embedder.embed(vec![prefixed], None)
@@ -90,14 +72,32 @@ pub fn embed_text(text: &str) -> Result<Vec<f32>, String> {
         .ok_or("No embedding returned".to_string())
 }
 
-/// Generate embeddings for multiple texts (batch)
-pub fn embed_batch(texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+/// Generate embedding for document/passage (use "passage:" prefix)
+pub fn embed_passage(text: &str) -> Result<Vec<f32>, String> {
     let embedder = EMBEDDER.get()
         .ok_or("Embedder not initialized")?
         .lock()
         .map_err(|e| format!("Failed to lock embedder: {}", e))?;
 
-    // Prefix for passages (e5 model recommendation)
+    // E5 model: use "passage:" prefix for documents being indexed
+    let prefixed = format!("passage: {}", text);
+    
+    let embeddings = embedder.embed(vec![prefixed], None)
+        .map_err(|e| format!("Embedding failed: {}", e))?;
+
+    embeddings.into_iter().next()
+        .ok_or("No embedding returned".to_string())
+}
+
+/// Generate embeddings for multiple passages (batch indexing)
+#[allow(dead_code)]
+pub fn embed_passages_batch(texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+    let embedder = EMBEDDER.get()
+        .ok_or("Embedder not initialized")?
+        .lock()
+        .map_err(|e| format!("Failed to lock embedder: {}", e))?;
+
+    // E5 model: use "passage:" prefix for batch indexing
     let prefixed: Vec<String> = texts.iter()
         .map(|t| format!("passage: {}", t))
         .collect();
@@ -227,9 +227,9 @@ pub fn get_embedding_stats(conn: &Connection) -> Result<serde_json::Value> {
     };
 
     Ok(serde_json::json!({
-        "total_embeddings": total,
-        "by_type": by_type.into_iter().collect::<std::collections::HashMap<_, _>>(),
-        "embedding_dimension": EMBEDDING_DIM,
+        "totalEmbeddings": total,
+        "byType": by_type.into_iter().collect::<std::collections::HashMap<_, _>>(),
+        "embeddingDimension": EMBEDDING_DIM,
         "model": "multilingual-e5-small"
     }))
 }
@@ -297,7 +297,8 @@ pub fn index_message(conn: &Connection, message_id: i64, content: &str) -> Resul
         return Ok(());
     }
 
-    let vector = embed_text(content)?;
+    // Use embed_passage for documents being indexed
+    let vector = embed_passage(content)?;
     store_embedding(conn, "message", message_id, content, &vector)
         .map_err(|e| format!("Failed to store embedding: {}", e))?;
 
@@ -310,7 +311,8 @@ pub fn index_memory(conn: &Connection, memory_id: i64, content: &str) -> Result<
         return Ok(());
     }
 
-    let vector = embed_text(content)?;
+    // Use embed_passage for documents being indexed
+    let vector = embed_passage(content)?;
     store_embedding(conn, "memory", memory_id, content, &vector)
         .map_err(|e| format!("Failed to store embedding: {}", e))?;
 
@@ -323,7 +325,8 @@ pub fn find_similar_messages(
     query: &str,
     limit: i32,
 ) -> Result<Vec<(i64, f32)>, String> {
-    let query_vector = embed_text(query)?;
+    // Use embed_query for search queries
+    let query_vector = embed_query(query)?;
     
     let results = semantic_search(conn, &query_vector, Some("message"), limit, 0.5)
         .map_err(|e| format!("Search failed: {}", e))?;
@@ -337,7 +340,8 @@ pub fn find_rag_context(
     query: &str,
     limit: i32,
 ) -> Result<Vec<SearchResult>, String> {
-    let query_vector = embed_text(query)?;
+    // Use embed_query for search queries
+    let query_vector = embed_query(query)?;
     
     // Search both messages and memories
     let results = semantic_search(conn, &query_vector, None, limit, 0.4)
