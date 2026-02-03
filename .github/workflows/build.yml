@@ -62,7 +62,7 @@ jobs:
     - name: Build Rust (CPU only for now)
       working-directory: src-tauri
       run: |
-        cargo build --release --no-default-features --features "custom-protocol,llm-cpu"
+        cargo build --release --features "custom-protocol"
       env:
         CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
 
