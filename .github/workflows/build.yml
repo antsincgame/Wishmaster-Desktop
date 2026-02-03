@@ -45,7 +45,7 @@ jobs:
       uses: Jimver/cuda-toolkit@v0.2.16
       id: cuda-toolkit
       with:
-        cuda: '12.2.0'
+        cuda: '12.4.0'
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -122,7 +122,7 @@ jobs:
       uses: Jimver/cuda-toolkit@v0.2.16
       id: cuda-toolkit
       with:
-        cuda: '12.2.0'
+        cuda: '12.4.0'
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
