@@ -12,7 +12,6 @@ import type {
   Message,
   Session,
   Settings,
-  Model,
   GpuInfo,
   VoiceProfile,
   VoiceRecording,
