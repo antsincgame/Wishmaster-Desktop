@@ -22,9 +22,8 @@ once_cell = "1"
 base64 = "0.21"
 thiserror = "1.0"  # Custom error types
 
-# LLM - native llama.cpp bindings
-# Use "cuda" feature for GPU acceleration, or no feature for CPU-only
-llama-cpp-2 = { version = "0.1", optional = true }
+# LLM - native llama.cpp bindings (CPU by default, CUDA optional)
+llama-cpp-2 = "0.1"
 
 # Audio - placeholder (add cpal + hound later for voice features)
 # cpal = "0.15"
@@ -37,12 +36,11 @@ llama-cpp-2 = { version = "0.1", optional = true }
 # ort = "2.0"
 
 [features]
-default = ["custom-protocol", "llm-cuda"]
+default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
-# LLM features
-llm-cuda = ["llama-cpp-2/cuda", "dep:llama-cpp-2"]
-llm-cpu = ["dep:llama-cpp-2"]
+# CUDA acceleration (requires CUDA toolkit)
+cuda = ["llama-cpp-2/cuda"]
 
 [dev-dependencies]
 tempfile = "3.10"  # For creating temp directories in tests

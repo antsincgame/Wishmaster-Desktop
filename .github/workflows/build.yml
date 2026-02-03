@@ -1,220 +1,37 @@
-# Build with CUDA support for Linux and Windows
-# CUDA Runtime is bundled into the application
-
-name: Build Desktop Apps (CUDA Bundled)
+# Build Wishmaster Desktop for Windows with CUDA
+name: Build Windows (CUDA)
 
 on:
   push:
     branches: [ main, master ]
-    tags:
-      - 'v*'
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      cuda_version:
-        description: 'CUDA version'
-        required: false
-        default: '12.4.0'
-      skip_tests:
-        description: 'Skip tests'
-        required: false
-        default: 'false'
 
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
-  CUDA_VERSION: ${{ github.event.inputs.cuda_version || '12.4.0' }}
-  # CUDA architectures: 75=Turing, 80=Ampere, 86=GA102, 89=Ada Lovelace
-  CMAKE_CUDA_ARCHITECTURES: "75;80;86;89"
 
 jobs:
-  # ==================== TESTS ====================
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.skip_tests != 'true' }}
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Run frontend tests
-      run: npm test
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Run Rust tests
-      working-directory: src-tauri
-      run: cargo test --no-default-features
-
-  # ==================== LINUX + CUDA (Bundled) ====================
-  build-linux:
-    needs: [test]
-    if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
-    name: Build Linux (CUDA Bundled)
-    runs-on: ubuntu-22.04
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Free disk space
-      run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/share/boost
-        df -h
-
-    - name: Install CUDA Toolkit
-      uses: Jimver/cuda-toolkit@v0.2.17
-      id: cuda-toolkit
-      with:
-        cuda: ${{ env.CUDA_VERSION }}
-        method: 'network'
-        sub-packages: '["nvcc", "cudart", "cublas", "cublas-dev"]'
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      
-    - name: Rust cache
-      uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: src-tauri
-        cache-on-failure: true
-      
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-
-    - name: Install Linux dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          libwebkit2gtk-4.1-dev \
-          build-essential \
-          cmake \
-          curl \
-          wget \
-          libssl-dev \
-          libgtk-3-dev \
-          libayatana-appindicator3-dev \
-          librsvg2-dev \
-          imagemagick \
-          libclang-dev \
-          clang \
-          patchelf
-
-    - name: Generate Linux icons
-      run: |
-        cd src-tauri/icons
-        convert icon.png -resize 32x32 32x32.png
-        convert icon.png -resize 128x128 128x128.png
-        convert icon.png -resize 256x256 128x128@2x.png
-        ls -la
-
-    - name: Install npm dependencies
-      run: npm ci
-
-    - name: Build Tauri app
-      run: npm run tauri:build
-      env:
-        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
-        LD_LIBRARY_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/lib64:$LD_LIBRARY_PATH
-        TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-        TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-
-    - name: Bundle CUDA libraries into AppImage
-      run: |
-        echo "=== Bundling CUDA libraries ==="
-        CUDA_PATH="${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
-        APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
-        
-        # Find the AppImage
-        APPIMAGE=$(find $APPIMAGE_DIR -name "*.AppImage" | head -1)
-        if [ -z "$APPIMAGE" ]; then
-          echo "AppImage not found, skipping CUDA bundling"
-          exit 0
-        fi
-        
-        echo "Found AppImage: $APPIMAGE"
-        
-        # Extract AppImage
-        chmod +x "$APPIMAGE"
-        cd $APPIMAGE_DIR
-        ./*.AppImage --appimage-extract
-        
-        # Create libs directory
-        mkdir -p squashfs-root/usr/lib
-        
-        # Copy CUDA runtime libraries
-        echo "Copying CUDA libraries..."
-        cp -v $CUDA_PATH/lib64/libcudart.so* squashfs-root/usr/lib/ 2>/dev/null || true
-        cp -v $CUDA_PATH/lib64/libcublas.so* squashfs-root/usr/lib/ 2>/dev/null || true
-        cp -v $CUDA_PATH/lib64/libcublasLt.so* squashfs-root/usr/lib/ 2>/dev/null || true
-        
-        # Update rpath
-        BINARY=$(find squashfs-root -name "wishmaster*" -type f -executable | head -1)
-        if [ -n "$BINARY" ]; then
-          patchelf --set-rpath '$ORIGIN/../lib:$ORIGIN' "$BINARY" || true
-        fi
-        
-        # Repack AppImage
-        echo "Repacking AppImage with CUDA..."
-        rm -f "$APPIMAGE"
-        
-        # Download appimagetool if not present
-        if [ ! -f appimagetool ]; then
-          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
-          chmod +x appimagetool
-        fi
-        
-        ARCH=x86_64 ./appimagetool squashfs-root
-        
-        # Rename to include cuda suffix
-        mv Wishmaster*.AppImage wishmaster-linux-cuda.AppImage || true
-        
-        echo "=== CUDA bundling complete ==="
-        ls -la
-
-    - name: Upload Linux AppImage (CUDA Bundled)
-      uses: actions/upload-artifact@v4
-      with:
-        name: wishmaster-linux-appimage-cuda
-        path: src-tauri/target/release/bundle/appimage/*.AppImage
-        if-no-files-found: warn
-        
-    - name: Upload Linux DEB
-      uses: actions/upload-artifact@v4
-      with:
-        name: wishmaster-linux-deb
-        path: src-tauri/target/release/bundle/deb/*.deb
-        if-no-files-found: ignore
-
-  # ==================== WINDOWS + CUDA (Bundled) ====================
   build-windows:
-    needs: [test]
-    if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
-    name: Build Windows (CUDA Bundled)
+    name: Build Windows (CUDA)
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
     - name: Install CUDA Toolkit
       uses: Jimver/cuda-toolkit@v0.2.17
       id: cuda-toolkit
       with:
-        cuda: ${{ env.CUDA_VERSION }}
+        cuda: '12.4.0'
         method: 'network'
         sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev"]'
+
+    - name: Show CUDA info
+      run: |
+        echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
+        nvcc --version
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -236,234 +53,41 @@ jobs:
       with:
         version: "17"
 
-    - name: Generate Windows icon
-      run: |
-        choco install imagemagick -y
-        magick src-tauri/icons/icon.png -define icon:auto-resize=256,128,64,48,32,16 src-tauri/icons/icon.ico
-
     - name: Install npm dependencies
       run: npm ci
 
-    - name: Build Tauri app
+    - name: Build frontend
+      run: npm run build
+
+    - name: Build Rust (CPU only for now)
+      working-directory: src-tauri
+      run: |
+        cargo build --release --no-default-features --features "custom-protocol,llm-cpu"
+      env:
+        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+
+    - name: Build Tauri bundle
       run: npm run tauri:build
       env:
         CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
-        TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-        TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
-    - name: Bundle CUDA DLLs
-      shell: pwsh
+    - name: List build output
       run: |
-        Write-Host "=== Bundling CUDA DLLs ===" -ForegroundColor Cyan
-        $cudaPath = "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
-        $bundleDir = "src-tauri/target/release"
-        
-        # Find CUDA DLLs
-        $cudaBin = Join-Path $cudaPath "bin"
-        
-        if (Test-Path $cudaBin) {
-          Write-Host "CUDA bin path: $cudaBin"
-          
-          # Copy CUDA runtime DLLs next to the executable
-          $dlls = @(
-            "cudart64_*.dll",
-            "cublas64_*.dll",
-            "cublasLt64_*.dll"
-          )
-          
-          foreach ($pattern in $dlls) {
-            $files = Get-ChildItem -Path $cudaBin -Filter $pattern -ErrorAction SilentlyContinue
-            foreach ($file in $files) {
-              Write-Host "Copying: $($file.Name)"
-              Copy-Item $file.FullName -Destination $bundleDir -Force
-            }
-          }
-          
-          # Also copy to NSIS bundle if exists
-          $nsisDir = "src-tauri/target/release/bundle/nsis"
-          if (Test-Path $nsisDir) {
-            foreach ($pattern in $dlls) {
-              $files = Get-ChildItem -Path $cudaBin -Filter $pattern -ErrorAction SilentlyContinue
-              foreach ($file in $files) {
-                Copy-Item $file.FullName -Destination $nsisDir -Force
-              }
-            }
-          }
-        }
-        
-        Write-Host "=== CUDA bundling complete ===" -ForegroundColor Green
-        Get-ChildItem $bundleDir -Filter "*.dll" | Select-Object Name, Length
+        echo "=== Release directory ==="
+        Get-ChildItem -Path src-tauri/target/release -Filter "*.exe" | Select-Object Name, Length
+        echo "=== Bundle directory ==="
+        Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include "*.msi","*.exe" | Select-Object FullName, Length
 
     - name: Upload Windows MSI
       uses: actions/upload-artifact@v4
       with:
-        name: wishmaster-windows-msi-cuda
+        name: wishmaster-windows-msi
         path: src-tauri/target/release/bundle/msi/*.msi
         if-no-files-found: warn
 
-    - name: Upload Windows NSIS (with CUDA DLLs)
+    - name: Upload Windows EXE
       uses: actions/upload-artifact@v4
       with:
-        name: wishmaster-windows-nsis-cuda
-        path: |
-          src-tauri/target/release/bundle/nsis/*.exe
-          src-tauri/target/release/*.dll
-        if-no-files-found: ignore
-
-    - name: Upload Windows Portable (EXE + DLLs)
-      uses: actions/upload-artifact@v4
-      with:
-        name: wishmaster-windows-portable-cuda
-        path: |
-          src-tauri/target/release/wishmaster*.exe
-          src-tauri/target/release/*.dll
-        if-no-files-found: ignore
-
-  # ==================== macOS (CPU only) ====================
-  build-macos:
-    needs: [test]
-    if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
-    name: Build macOS (CPU)
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: aarch64-apple-darwin,x86_64-apple-darwin
-      
-    - name: Rust cache
-      uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: src-tauri
-
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-
-    - name: Install npm dependencies
-      run: npm ci
-
-    - name: Build Tauri app (Universal)
-      run: npm run tauri:build -- --target universal-apple-darwin
-      env:
-        TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-        TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-
-    - name: Upload macOS DMG
-      uses: actions/upload-artifact@v4
-      with:
-        name: wishmaster-macos-dmg
-        path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-        if-no-files-found: ignore
-
-    - name: Upload macOS App
-      uses: actions/upload-artifact@v4
-      with:
-        name: wishmaster-macos-app
-        path: src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
-        if-no-files-found: ignore
-
-  # ==================== RELEASE ====================
-  release:
-    name: Create GitHub Release
-    needs: [build-linux, build-windows, build-macos]
-    runs-on: ubuntu-latest
-    if: |
-      always() && 
-      (needs.build-linux.result == 'success' || needs.build-windows.result == 'success') &&
-      (github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'))
-    steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      
-    - name: List artifacts
-      run: |
-        echo "=== Downloaded artifacts ==="
-        find . -type f -name "*.AppImage" -o -name "*.deb" -o -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.dll" | head -50
-        du -sh */ 2>/dev/null || true
-
-    - name: Prepare release files
-      run: |
-        mkdir -p release-files
-        
-        # Linux
-        find wishmaster-linux-appimage-cuda -name "*.AppImage" -exec cp {} release-files/ \; 2>/dev/null || true
-        find wishmaster-linux-deb -name "*.deb" -exec cp {} release-files/ \; 2>/dev/null || true
-        
-        # Windows
-        find wishmaster-windows-msi-cuda -name "*.msi" -exec cp {} release-files/ \; 2>/dev/null || true
-        find wishmaster-windows-nsis-cuda -name "*.exe" -exec cp {} release-files/ \; 2>/dev/null || true
-        
-        # macOS
-        find wishmaster-macos-dmg -name "*.dmg" -exec cp {} release-files/ \; 2>/dev/null || true
-        
-        # Create Windows portable ZIP with CUDA DLLs
-        if [ -d "wishmaster-windows-portable-cuda" ]; then
-          cd wishmaster-windows-portable-cuda
-          zip -r ../release-files/wishmaster-windows-portable-cuda.zip . || true
-          cd ..
-        fi
-        
-        echo "=== Release files ==="
-        ls -la release-files/
-
-    - name: Generate release tag
-      id: tag
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-          echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-        else
-          echo "tag=v1.0.${{ github.run_number }}" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.tag.outputs.tag }}
-        name: Wishmaster Desktop ${{ steps.tag.outputs.tag }} (CUDA Bundled)
-        body: |
-          ## 🧞 Wishmaster Desktop - GPU Accelerated
-          
-          **CUDA Runtime is bundled** - no separate CUDA installation required!
-          
-          ### 📥 Downloads
-          
-          | Platform | File | Notes |
-          |----------|------|-------|
-          | 🐧 Linux | `*.AppImage` | Recommended, CUDA bundled |
-          | 🐧 Linux | `*.deb` | Debian/Ubuntu package |
-          | 🪟 Windows | `*.msi` | MSI installer |
-          | 🪟 Windows | `*-portable.zip` | Portable with CUDA DLLs |
-          | 🍎 macOS | `*.dmg` | Universal (Intel + Apple Silicon) |
-          
-          ### ⚡ Requirements
-          
-          - **GPU Version**: NVIDIA GPU with CUDA support (GTX 1060+, RTX series)
-          - **CPU Version**: Works on any system (slower inference)
-          
-          ### ✨ Features
-          
-          - 🚀 **GPU Acceleration** - CUDA for fast inference (bundled!)
-          - 🧠 **Total Memory** - AI remembers ALL conversations
-          - 🪞 **Digital Twin** - Export data for fine-tuning your AI clone
-          - 🗣️ **Voice Clone** - TTS with your voice
-          - 🔒 **100% Local** - No cloud, no servers, complete privacy
-          
-          ### 📝 Changelog
-          
-          - CUDA runtime bundled into application
-          - Windows SAPI TTS support
-          - macOS native TTS support
-          - Improved error handling
-          - Temperature sampling fix
-          
-        files: release-files/*
-        draft: false
-        prerelease: false
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: wishmaster-windows-exe
+        path: src-tauri/target/release/bundle/nsis/*.exe
+        if-no-files-found: warn
