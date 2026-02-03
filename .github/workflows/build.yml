@@ -56,6 +56,18 @@ jobs:
     - name: Install npm dependencies
       run: npm ci
 
+    # ==================== VALIDATION STAGE ====================
+    - name: Validate configuration
+      run: npm run validate
+
+    - name: TypeScript type check
+      run: npm run typecheck
+
+    - name: Rust syntax check
+      working-directory: src-tauri
+      run: cargo check --features "custom-protocol"
+
+    # ==================== BUILD STAGE ====================
     - name: Build frontend
       run: npm run build
 
