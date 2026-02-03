@@ -256,6 +256,8 @@ export interface Settings {
   ttsEnabled: boolean;
   /** Paths to GGUF model files */
   modelPaths: string[];
+  /** Custom system prompt for LLM */
+  systemPrompt: string;
 }
 
 // ==================== EXPORT FORMAT TYPES ====================
@@ -358,4 +360,5 @@ export const DEFAULT_SETTINGS: Settings = {
   sttEnabled: true,
   ttsEnabled: true,
   modelPaths: [],
+  systemPrompt: 'Ты - Wishmaster, умный AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке.',
 };
