@@ -285,7 +285,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({ gpuInfo })
     } catch (e) {
       console.error('Failed to load GPU info:', e)
-      set({ gpuInfo: { available: false, backend: 'CPU', device_name: 'N/A', vram_total_mb: 0, vram_free_mb: 0 } })
+      set({ gpuInfo: { available: false, backend: 'CPU', deviceName: 'N/A', vramTotalMb: 0, vramFreeMb: 0 } })
     }
   },
 
