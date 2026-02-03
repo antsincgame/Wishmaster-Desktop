@@ -4,6 +4,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::database;
+use crate::embeddings;
 use crate::llm;
 use crate::voice;
 
@@ -189,7 +190,19 @@ pub fn get_messages(session_id: i64) -> Result<Vec<Message>, String> {
 
 #[tauri::command]
 pub fn save_message(session_id: i64, content: String, is_user: bool) -> Result<i64, String> {
-    database::insert_message(session_id, &content, is_user).map_err(|e| e.to_string())
+    let msg_id = database::insert_message(session_id, &content, is_user).map_err(|e| e.to_string())?;
+    
+    // Auto-index message for semantic search (async, non-blocking)
+    let content_clone = content.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = database::with_connection(|conn| {
+            embeddings::index_message(conn, msg_id, &content_clone)
+        }) {
+            eprintln!("Failed to index message: {:?}", e);
+        }
+    });
+    
+    Ok(msg_id)
 }
 
 // ==================== MEMORY SYSTEM Commands ====================
@@ -429,7 +442,35 @@ pub async fn generate(
         }
     }
     
-    // Add relevant context from other sessions (search by keywords)
+    // Add relevant context using SEMANTIC SEARCH (RAG)
+    if let Ok(rag_results) = database::with_connection(|conn| {
+        embeddings::find_rag_context(conn, &prompt, 5)
+    }) {
+        if let Ok(results) = rag_results {
+            let relevant: Vec<_> = results.iter()
+                .filter(|r| r.similarity > 0.5)
+                .take(3)
+                .collect();
+            
+            if !relevant.is_empty() {
+                full_prompt.push_str("=== РЕЛЕВАНТНЫЙ КОНТЕКСТ (semantic search) ===\n");
+                for result in relevant {
+                    let source = match result.source_type.as_str() {
+                        "memory" => "Память",
+                        "message" => "Сообщение",
+                        _ => &result.source_type,
+                    };
+                    full_prompt.push_str(&format!("[{} | сходство: {:.0}%] {}\n",
+                        source,
+                        result.similarity * 100.0,
+                        result.content.chars().take(200).collect::<String>()));
+                }
+                full_prompt.push_str("\n");
+            }
+        }
+    }
+    
+    // Fallback to keyword search if semantic search didn't find anything
     let keywords: Vec<&str> = prompt.split_whitespace()
         .filter(|w| w.len() > 3)
         .take(3)
@@ -443,7 +484,7 @@ pub async fn generate(
                 .collect();
             
             if !other_session_msgs.is_empty() {
-                full_prompt.push_str("=== РЕЛЕВАНТНЫЙ КОНТЕКСТ ИЗ ДРУГИХ ЧАТОВ ===\n");
+                full_prompt.push_str("=== КОНТЕКСТ ИЗ ДРУГИХ ЧАТОВ (keyword) ===\n");
                 for msg in other_session_msgs {
                     let role = if msg.is_user { "Пользователь" } else { "Ассистент" };
                     full_prompt.push_str(&format!("[{}] {}: {}\n", 
@@ -584,4 +625,54 @@ pub fn create_voice_profile_from_recording(recording_id: i64, name: String) -> R
     let rec = recordings.iter().find(|r| r.id == recording_id)
         .ok_or_else(|| "Recording not found".to_string())?;
     database::create_voice_profile(name.trim(), &rec.path).map_err(|e| e.to_string())
+}
+
+// ==================== SEMANTIC SEARCH Commands (RAG) ====================
+
+/// Semantic search using embeddings
+#[tauri::command]
+pub fn semantic_search(query: String, limit: i32) -> Result<Vec<embeddings::SearchResult>, String> {
+    // This requires database connection access, we need to refactor slightly
+    // For now, use the high-level API
+    Err("Use find_rag_context instead".to_string())
+}
+
+/// Find relevant context for RAG using semantic search
+#[tauri::command]
+pub fn find_rag_context(query: String, limit: i32) -> Result<Vec<embeddings::SearchResult>, String> {
+    // Get database connection through a helper
+    let results = database::with_connection(|conn| {
+        embeddings::find_rag_context(conn, &query, limit)
+    }).map_err(|e| e.to_string())??;
+    
+    Ok(results)
+}
+
+/// Index all existing messages for semantic search
+#[tauri::command]
+pub async fn index_all_messages() -> Result<i32, String> {
+    let messages = database::get_all_messages_for_indexing()
+        .map_err(|e| e.to_string())?;
+    
+    let mut indexed = 0;
+    
+    database::with_connection(|conn| {
+        for (id, content) in &messages {
+            match embeddings::index_message(conn, *id, content) {
+                Ok(_) => indexed += 1,
+                Err(e) => eprintln!("Failed to index message {}: {}", id, e),
+            }
+        }
+        Ok::<_, String>(())
+    }).map_err(|e| e.to_string())??;
+    
+    Ok(indexed)
+}
+
+/// Get embedding statistics
+#[tauri::command]
+pub fn get_embedding_stats() -> Result<serde_json::Value, String> {
+    database::with_connection(|conn| {
+        embeddings::get_embedding_stats(conn).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?
 }

@@ -196,6 +196,32 @@ export interface DataStats {
   estimatedTokens: number;
 }
 
+// ==================== SEMANTIC SEARCH TYPES ====================
+
+/**
+ * Result from semantic search (RAG)
+ */
+export interface SearchResult {
+  /** Source type: "message", "memory", "document" */
+  sourceType: string;
+  /** ID of the source item */
+  sourceId: number;
+  /** Content text */
+  content: string;
+  /** Similarity score (0.0 - 1.0) */
+  similarity: number;
+}
+
+/**
+ * Embedding statistics
+ */
+export interface EmbeddingStats {
+  totalEmbeddings: number;
+  byType: Record<string, number>;
+  embeddingDimension: number;
+  model: string;
+}
+
 // ==================== SETTINGS TYPES ====================
 
 /**

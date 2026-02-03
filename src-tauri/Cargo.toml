@@ -25,6 +25,9 @@ thiserror = "1.0"  # Custom error types
 # LLM - native llama.cpp bindings (CPU by default, CUDA optional)
 llama-cpp-2 = "0.1"
 
+# Embeddings for semantic search / RAG
+fastembed = "4"
+
 # Audio - placeholder (add cpal + hound later for voice features)
 # cpal = "0.15"
 # hound = "3.5"

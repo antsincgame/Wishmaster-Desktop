@@ -20,6 +20,8 @@ import type {
   GlobalMessage,
   DataStats,
   HistoryMessage,
+  SearchResult,
+  EmbeddingStats,
 } from '../types';
 
 // ==================== ERROR HANDLING ====================
@@ -329,6 +331,32 @@ export const voiceApi = {
   stopSpeaking: () => safeInvoke<void>('stop_speaking'),
 };
 
+// ==================== SEMANTIC SEARCH API ====================
+
+export const searchApi = {
+  /**
+   * Find relevant context using semantic search (RAG)
+   */
+  findRagContext: (query: string, limit: number = 5) =>
+    safeInvoke<SearchResult[]>('find_rag_context', { query, limit }, []),
+
+  /**
+   * Index all existing messages for semantic search
+   */
+  indexAllMessages: () => safeInvoke<number>('index_all_messages'),
+
+  /**
+   * Get embedding statistics
+   */
+  getStats: () =>
+    safeInvoke<EmbeddingStats>('get_embedding_stats', undefined, {
+      totalEmbeddings: 0,
+      byType: {},
+      embeddingDimension: 384,
+      model: 'multilingual-e5-small',
+    }),
+};
+
 // ==================== COMBINED EXPORT ====================
 
 export const api = {
@@ -341,6 +369,7 @@ export const api = {
   persona: personaApi,
   export: exportApi,
   voice: voiceApi,
+  search: searchApi,
 };
 
 export default api;

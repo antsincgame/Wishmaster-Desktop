@@ -3,6 +3,7 @@
 
 mod commands;
 mod database;
+mod embeddings;
 mod errors;
 mod llm;
 mod voice;
@@ -44,8 +45,18 @@ fn main() {
             // Initialize voice engine
             voice::init();
             
+            // Initialize embedding model (async, non-blocking)
+            std::thread::spawn(|| {
+                if let Err(e) = embeddings::init_embedder() {
+                    eprintln!("Warning: Failed to initialize embeddings: {}", e);
+                } else {
+                    println!("🔍 Semantic search ready");
+                }
+            });
+            
             println!("🧞 Wishmaster Desktop started!");
             println!("📚 Memory system active - all conversations will be remembered");
+            println!("🔍 RAG/Vector search enabled");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -87,6 +98,11 @@ fn main() {
             commands::export_sharegpt_format,
             commands::get_data_stats,
             commands::export_to_file,
+            // SEMANTIC SEARCH (RAG)
+            commands::semantic_search,
+            commands::find_rag_context,
+            commands::index_all_messages,
+            commands::get_embedding_stats,
             // Voice
             commands::get_voice_profiles,
             commands::create_voice_profile,

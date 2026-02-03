@@ -155,9 +155,26 @@ pub fn init(db_path: &Path) -> Result<()> {
         END;
     "#)?;
     
+    // Initialize embeddings table
+    conn.execute_batch(r#"
+        -- Vector embeddings storage
+        CREATE TABLE IF NOT EXISTS embeddings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_type TEXT NOT NULL,
+            source_id INTEGER NOT NULL,
+            content_hash TEXT NOT NULL,
+            vector BLOB NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(source_type, source_id)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
+        CREATE INDEX IF NOT EXISTS idx_embeddings_hash ON embeddings(content_hash);
+    "#)?;
+    
     match DB.set(Mutex::new(conn)) {
         Ok(()) => {
-            println!("Database initialized with memory system");
+            println!("Database initialized with memory system and embeddings");
             Ok(())
         }
         Err(_) => {
@@ -177,6 +194,27 @@ fn get_conn() -> Result<std::sync::MutexGuard<'static, Connection>> {
         eprintln!("Failed to acquire database lock: {}", e);
         rusqlite::Error::InvalidQuery
     })
+}
+
+/// Execute a function with database connection (for embeddings module)
+pub fn with_connection<F, T>(f: F) -> Result<T>
+where
+    F: FnOnce(&Connection) -> T,
+{
+    let conn = get_conn()?;
+    Ok(f(&conn))
+}
+
+/// Get all messages for indexing (id, content pairs)
+pub fn get_all_messages_for_indexing() -> Result<Vec<(i64, String)>> {
+    let conn = get_conn()?;
+    let mut stmt = conn.prepare("SELECT id, content FROM messages")?;
+    
+    let messages = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
+    
+    messages.collect()
 }
 
 fn get_timestamp() -> i64 {
