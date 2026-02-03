@@ -8,12 +8,19 @@ static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 static IS_SPEAKING: AtomicBool = AtomicBool::new(false);
 static TTS_PROCESS: OnceCell<Mutex<Option<std::process::Child>>> = OnceCell::new();
 
-// TTS engines available on Linux
-#[derive(Clone, Copy, PartialEq)]
+/// TTS engines available on different platforms
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TtsEngine {
-    EspeakNg,    // espeak-ng (most common, installed by default on many distros)
-    Piper,       // piper-tts (high quality neural TTS)
-    Festival,    // festival (older but widely available)
+    /// espeak-ng (Linux/Windows, most common)
+    EspeakNg,
+    /// piper-tts (Linux, high quality neural TTS)
+    Piper,
+    /// festival (Linux, older but widely available)
+    Festival,
+    /// Windows SAPI (Windows built-in)
+    WindowsSapi,
+    /// macOS say command
+    MacOsSay,
 }
 
 static CURRENT_TTS: OnceCell<Mutex<TtsEngine>> = OnceCell::new();
@@ -34,30 +41,54 @@ pub fn init() {
         TtsEngine::EspeakNg => "espeak-ng",
         TtsEngine::Piper => "piper",
         TtsEngine::Festival => "festival",
+        TtsEngine::WindowsSapi => "Windows SAPI",
+        TtsEngine::MacOsSay => "macOS say",
     };
     println!("Voice engine initialized. TTS: {}", engine_name);
 }
 
 /// Detect available TTS engine on system
 fn detect_tts_engine() -> TtsEngine {
-    // Try piper first (best quality)
-    if Command::new("piper").arg("--help").output().is_ok() {
-        return TtsEngine::Piper;
+    // Platform-specific detection
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: Check for SAPI (always available) or espeak-ng
+        if Command::new("espeak-ng").arg("--version").output().is_ok() {
+            return TtsEngine::EspeakNg;
+        }
+        // SAPI is always available on Windows
+        return TtsEngine::WindowsSapi;
     }
     
-    // Try espeak-ng (most common)
-    if Command::new("espeak-ng").arg("--version").output().is_ok() {
-        return TtsEngine::EspeakNg;
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: Use built-in 'say' command
+        if Command::new("say").arg("--voice=?").output().is_ok() {
+            return TtsEngine::MacOsSay;
+        }
     }
     
-    // Try espeak (older version)
-    if Command::new("espeak").arg("--version").output().is_ok() {
-        return TtsEngine::EspeakNg;
-    }
-    
-    // Try festival
-    if Command::new("festival").arg("--version").output().is_ok() {
-        return TtsEngine::Festival;
+    #[cfg(target_os = "linux")]
+    {
+        // Linux: Try piper first (best quality)
+        if Command::new("piper").arg("--help").output().is_ok() {
+            return TtsEngine::Piper;
+        }
+        
+        // Try espeak-ng (most common)
+        if Command::new("espeak-ng").arg("--version").output().is_ok() {
+            return TtsEngine::EspeakNg;
+        }
+        
+        // Try espeak (older version)
+        if Command::new("espeak").arg("--version").output().is_ok() {
+            return TtsEngine::EspeakNg;
+        }
+        
+        // Try festival
+        if Command::new("festival").arg("--version").output().is_ok() {
+            return TtsEngine::Festival;
+        }
     }
     
     // Default to espeak-ng
@@ -130,6 +161,8 @@ pub fn speak(text: &str, _voice_id: Option<i64>) -> Result<(), String> {
         TtsEngine::EspeakNg => speak_espeak(text),
         TtsEngine::Piper => speak_piper(text),
         TtsEngine::Festival => speak_festival(text),
+        TtsEngine::WindowsSapi => speak_windows_sapi(text),
+        TtsEngine::MacOsSay => speak_macos(text),
     };
     
     IS_SPEAKING.store(false, Ordering::SeqCst);
@@ -238,31 +271,148 @@ fn speak_festival(text: &str) -> Result<(), String> {
     }
 }
 
+/// Speak using Windows SAPI (Speech API)
+/// Available on all Windows versions
+#[cfg(target_os = "windows")]
+fn speak_windows_sapi(text: &str) -> Result<(), String> {
+    println!("Speaking with Windows SAPI: {}...", &text[..text.len().min(50)]);
+    
+    // Escape text for PowerShell
+    let escaped_text = text
+        .replace("\\", "\\\\")
+        .replace("\"", "`\"")
+        .replace("$", "`$")
+        .replace("`", "``");
+    
+    // Use PowerShell to access Windows SAPI
+    let script = format!(
+        r#"Add-Type -AssemblyName System.Speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; $synth.Speak("{}")"#,
+        escaped_text
+    );
+    
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .output();
+    
+    match output {
+        Ok(out) => {
+            if out.status.success() {
+                Ok(())
+            } else {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                Err(format!("SAPI failed: {}", stderr))
+            }
+        }
+        Err(e) => Err(format!("Failed to execute PowerShell: {}", e))
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn speak_windows_sapi(_text: &str) -> Result<(), String> {
+    Err("Windows SAPI is only available on Windows".to_string())
+}
+
+/// Speak using macOS 'say' command
+#[cfg(target_os = "macos")]
+fn speak_macos(text: &str) -> Result<(), String> {
+    println!("Speaking with macOS say: {}...", &text[..text.len().min(50)]);
+    
+    // Try to detect language and use appropriate voice
+    let has_cyrillic = text.chars().any(|c| c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я');
+    
+    let mut cmd = Command::new("say");
+    
+    if has_cyrillic {
+        // Try Russian voice if available (Milena or Yuri)
+        cmd.args(["-v", "Milena"]);
+    }
+    
+    cmd.arg(text);
+    
+    match cmd.output() {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(_) => {
+            // Fallback without specific voice
+            Command::new("say")
+                .arg(text)
+                .output()
+                .map(|_| ())
+                .map_err(|e| format!("macOS say failed: {}", e))
+        }
+        Err(e) => Err(format!("Failed to execute say: {}", e))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn speak_macos(_text: &str) -> Result<(), String> {
+    Err("macOS say is only available on macOS".to_string())
+}
+
 /// Stop speaking
 pub fn stop_speaking() {
     IS_SPEAKING.store(false, Ordering::SeqCst);
     
-    // Kill any running TTS processes
-    let _ = Command::new("pkill")
-        .args(["-f", "espeak"])
-        .output();
-    let _ = Command::new("pkill")
-        .args(["-f", "piper"])
-        .output();
-    let _ = Command::new("pkill")
-        .args(["-f", "festival"])
-        .output();
-    let _ = Command::new("pkill")
-        .args(["-f", "aplay"])
-        .output();
+    // Platform-specific process termination
+    #[cfg(target_os = "windows")]
+    {
+        // Kill PowerShell TTS processes on Windows
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "powershell.exe"])
+            .output();
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        // Kill say process on macOS
+        let _ = Command::new("pkill")
+            .args(["-f", "say"])
+            .output();
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        // Kill any running TTS processes on Linux
+        let _ = Command::new("pkill")
+            .args(["-f", "espeak"])
+            .output();
+        let _ = Command::new("pkill")
+            .args(["-f", "piper"])
+            .output();
+        let _ = Command::new("pkill")
+            .args(["-f", "festival"])
+            .output();
+        let _ = Command::new("pkill")
+            .args(["-f", "aplay"])
+            .output();
+    }
     
     println!("Stopped speaking");
 }
 
 /// Check if TTS is available on system
 pub fn is_tts_available() -> bool {
-    Command::new("espeak-ng").arg("--version").output().is_ok()
-        || Command::new("espeak").arg("--version").output().is_ok()
-        || Command::new("piper").arg("--help").output().is_ok()
-        || Command::new("festival").arg("--version").output().is_ok()
+    #[cfg(target_os = "windows")]
+    {
+        // Windows SAPI is always available
+        return true;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        // macOS 'say' is always available
+        return Command::new("say").arg("--voice=?").output().is_ok();
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        return Command::new("espeak-ng").arg("--version").output().is_ok()
+            || Command::new("espeak").arg("--version").output().is_ok()
+            || Command::new("piper").arg("--help").output().is_ok()
+            || Command::new("festival").arg("--version").output().is_ok();
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        false
+    }
 }

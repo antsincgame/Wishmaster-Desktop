@@ -769,3 +769,189 @@ pub fn save_voice_recording(path: &str) -> Result<i64> {
     
     Ok(conn.last_insert_rowid())
 }
+
+// ==================== TESTS ====================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::tempdir;
+
+    /// Helper to initialize a test database
+    fn setup_test_db() -> PathBuf {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.into_path().join("test.db");
+        
+        // Reset the global DB state for testing
+        // Note: In real tests, you'd want to isolate the DB instance
+        init(&db_path).expect("Failed to init test DB");
+        
+        db_path
+    }
+
+    #[test]
+    fn test_settings_default() {
+        let settings = Settings::default();
+        assert_eq!(settings.temperature, 0.7);
+        assert_eq!(settings.max_tokens, 512);
+        assert_eq!(settings.context_length, 2048);
+        assert_eq!(settings.theme, "dark");
+    }
+
+    #[test]
+    fn test_get_timestamp() {
+        let ts1 = get_timestamp();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let ts2 = get_timestamp();
+        
+        assert!(ts2 > ts1, "Timestamp should increase over time");
+        assert!(ts1 > 0, "Timestamp should be positive");
+    }
+
+    #[test]
+    fn test_memory_entry_structure() {
+        let memory = MemoryEntry {
+            id: 1,
+            content: "User likes Rust".to_string(),
+            category: "preference".to_string(),
+            source_session_id: 1,
+            source_message_id: 10,
+            importance: 8,
+            created_at: get_timestamp(),
+        };
+        
+        assert_eq!(memory.id, 1);
+        assert_eq!(memory.category, "preference");
+        assert_eq!(memory.importance, 8);
+    }
+
+    #[test]
+    fn test_user_persona_structure() {
+        let persona = UserPersona {
+            id: 1,
+            writing_style: "casual".to_string(),
+            avg_message_length: 50.5,
+            common_phrases: r#"["привет", "как дела"]"#.to_string(),
+            topics_of_interest: r#"["Rust", "AI"]"#.to_string(),
+            language: "ru".to_string(),
+            emoji_usage: "minimal".to_string(),
+            tone: "friendly".to_string(),
+            messages_analyzed: 100,
+            last_updated: get_timestamp(),
+        };
+        
+        assert_eq!(persona.writing_style, "casual");
+        assert_eq!(persona.language, "ru");
+        assert_eq!(persona.messages_analyzed, 100);
+    }
+
+    #[test]
+    fn test_export_message_structure() {
+        let msg = ExportMessage {
+            id: 1,
+            session_id: 1,
+            session_title: "Test Chat".to_string(),
+            content: "Hello world".to_string(),
+            is_user: true,
+            timestamp: get_timestamp(),
+        };
+        
+        assert!(msg.is_user);
+        assert_eq!(msg.session_title, "Test Chat");
+    }
+
+    #[test]
+    fn test_session_structure() {
+        let session = Session {
+            id: 1,
+            title: "New Chat".to_string(),
+            created_at: get_timestamp(),
+            message_count: 5,
+        };
+        
+        assert_eq!(session.title, "New Chat");
+        assert_eq!(session.message_count, 5);
+    }
+
+    #[test]
+    fn test_message_structure() {
+        let msg = Message {
+            id: 1,
+            content: "Привет!".to_string(),
+            is_user: true,
+            timestamp: get_timestamp(),
+        };
+        
+        assert!(msg.is_user);
+        assert!(msg.content.contains("Привет"));
+    }
+
+    #[test]
+    fn test_voice_profile_structure() {
+        let profile = VoiceProfile {
+            id: 1,
+            name: "My Voice".to_string(),
+            audio_path: "/path/to/voice.wav".to_string(),
+            created_at: get_timestamp(),
+        };
+        
+        assert_eq!(profile.name, "My Voice");
+        assert!(profile.audio_path.contains("wav"));
+    }
+
+    #[test]
+    fn test_voice_recording_structure() {
+        let recording = VoiceRecording {
+            id: 1,
+            path: "/path/to/recording.webm".to_string(),
+            created_at: get_timestamp(),
+        };
+        
+        assert!(recording.path.contains("webm"));
+    }
+
+    // Note: Integration tests that require actual DB operations
+    // should be run with `cargo test -- --test-threads=1` 
+    // to avoid concurrent access issues with the global DB
+
+    #[test]
+    fn test_settings_serialization() {
+        let settings = Settings {
+            temperature: 0.8,
+            max_tokens: 1024,
+            context_length: 4096,
+            theme: "light".to_string(),
+            accent_color: "magenta".to_string(),
+            auto_speak: true,
+            stt_enabled: false,
+            tts_enabled: true,
+            model_paths: vec!["/path/to/model.gguf".to_string()],
+        };
+        
+        // Test JSON serialization
+        let json = serde_json::to_string(&settings).expect("Failed to serialize");
+        assert!(json.contains("temperature"));
+        assert!(json.contains("0.8"));
+        
+        // Test deserialization
+        let parsed: Settings = serde_json::from_str(&json).expect("Failed to deserialize");
+        assert_eq!(parsed.temperature, 0.8);
+        assert_eq!(parsed.theme, "light");
+    }
+
+    #[test]
+    fn test_export_data_structure() {
+        let export = ExportData {
+            sessions: vec![],
+            messages: vec![],
+            memory: vec![],
+            persona: None,
+            exported_at: get_timestamp(),
+        };
+        
+        assert!(export.sessions.is_empty());
+        assert!(export.persona.is_none());
+        assert!(export.exported_at > 0);
+    }
+}

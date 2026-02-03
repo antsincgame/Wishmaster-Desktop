@@ -3,6 +3,7 @@
 
 mod commands;
 mod database;
+mod errors;
 mod llm;
 mod voice;
 

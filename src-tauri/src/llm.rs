@@ -32,6 +32,31 @@ const STOP_SEQUENCES: &[&str] = &[
     "<|endoftext|>",
 ];
 
+/// Sample a token with temperature
+/// 
+/// Temperature controls randomness:
+/// - temp = 0.0: greedy (always pick highest probability)
+/// - temp = 0.0-0.5: focused, deterministic
+/// - temp = 0.5-1.0: balanced creativity
+/// - temp > 1.0: more random, creative
+fn sample_with_temperature(candidates: &mut LlamaTokenDataArray, temperature: f32) -> llama_cpp_2::token::LlamaToken {
+    if temperature <= 0.0 {
+        // Greedy sampling - pick the most likely token
+        candidates.sample_token_greedy()
+    } else {
+        // Apply softmax first to convert logits to probabilities
+        candidates.sample_softmax();
+        
+        // Apply temperature scaling
+        // Higher temperature = more uniform distribution = more randomness
+        candidates.sample_temp(temperature);
+        
+        // Sample from the distribution
+        // Note: sample_token uses the probability distribution after temp scaling
+        candidates.sample_token()
+    }
+}
+
 pub fn init() {
     // Initialize llama.cpp backend
     let backend = BACKEND.get_or_init(|| {
@@ -235,9 +260,8 @@ where
         let candidates = ctx.candidates_ith(batch.n_tokens() - 1);
         let mut candidates_p = LlamaTokenDataArray::from_iter(candidates, false);
         
-        // Sample - use greedy for simplicity (temperature ignored for now)
-        // TODO: implement proper temperature sampling when API stabilizes
-        let new_token = candidates_p.sample_token_greedy();
+        // Sample with temperature
+        let new_token = sample_with_temperature(&mut candidates_p, temperature);
         
         // Check for EOS
         if model.is_eog_token(new_token) {

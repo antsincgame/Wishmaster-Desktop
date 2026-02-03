@@ -33,35 +33,59 @@
     "targets": "all",
     "icon": [
       "icons/icon.png",
-      "icons/icon.icns"
+      "icons/icon.icns",
+      "icons/icon.ico"
     ],
-    "resources": [],
+    "resources": [
+      "resources/*"
+    ],
     "externalBin": [],
+    "copyright": "© 2024 Wishmaster Team",
+    "category": "Utility",
+    "shortDescription": "Local AI Assistant with Voice Cloning",
+    "longDescription": "Wishmaster Desktop is a fully local AI assistant powered by llama.cpp with CUDA GPU acceleration. Features include multi-model chat, long-term memory, voice cloning, and digital twin export for fine-tuning.",
     "linux": {
       "appimage": {
-        "bundleMediaFramework": true
+        "bundleMediaFramework": true,
+        "files": {}
       },
       "deb": {
         "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"],
-        "desktopTemplate": "wishmaster.desktop"
+        "desktopTemplate": "wishmaster.desktop",
+        "section": "utils",
+        "priority": "optional"
+      },
+      "rpm": {
+        "release": "1",
+        "epoch": 0
       }
     },
     "macOS": {
       "minimumSystemVersion": "10.15",
       "signingIdentity": null,
-      "entitlements": null
+      "entitlements": null,
+      "frameworks": [],
+      "exceptionDomain": null
     },
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
       },
       "wix": {
-        "language": ["en-US", "ru-RU"]
+        "language": ["en-US", "ru-RU"],
+        "template": null,
+        "upgradeCode": null
       },
       "nsis": {
         "languages": ["English", "Russian"],
-        "displayLanguageSelector": true
-      }
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": null,
+        "sidebarImage": null,
+        "installMode": "currentUser",
+        "license": null
+      },
+      "allowDowngrades": false
     }
   },
   "plugins": {
