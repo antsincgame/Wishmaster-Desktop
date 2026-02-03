@@ -1,120 +1,36 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import type {
+  Message,
+  Session,
+  Model,
+  VoiceProfile,
+  VoiceRecording,
+  MemoryEntry,
+  UserPersona,
+  GlobalMessage,
+  DataStats,
+  GpuInfo,
+  SearchResult,
+  EmbeddingStats,
+  Settings,
+} from './types'
 
-// ==================== TYPES ====================
-
-export interface Message {
-  id: number
-  content: string
-  isUser: boolean
-  timestamp: number
-}
-
-export interface Session {
-  id: number
-  title: string
-  createdAt: number
-  messageCount: number
-}
-
-export interface Model {
-  name: string
-  path: string
-  size: number
-  isLoaded: boolean
-}
-
-export interface VoiceProfile {
-  id: number
-  name: string
-  audioPath: string
-  createdAt: number
-}
-
-export interface VoiceRecording {
-  id: number
-  path: string
-  createdAt: number
-}
-
-// Memory system types
-export interface MemoryEntry {
-  id: number
-  content: string
-  category: string
-  sourceSessionId: number
-  sourceMessageId: number
-  importance: number
-  createdAt: number
-}
-
-export interface UserPersona {
-  id: number
-  writingStyle: string
-  avgMessageLength: number
-  commonPhrases: string
-  topicsOfInterest: string
-  language: string
-  emojiUsage: string
-  tone: string
-  messagesAnalyzed: number
-  lastUpdated: number
-}
-
-export interface GlobalMessage {
-  id: number
-  sessionId: number
-  sessionTitle: string
-  content: string
-  isUser: boolean
-  timestamp: number
-}
-
-export interface DataStats {
-  totalSessions: number
-  totalMessages: number
-  userMessages: number
-  assistantMessages: number
-  totalMemories: number
-  totalCharacters: number
-  estimatedTokens: number
-}
-
-export interface GpuInfo {
-  available: boolean
-  backend: string
-  deviceName: string
-  vramTotalMb: number
-  vramFreeMb: number
-}
-
-// Semantic search result
-export interface SearchResult {
-  sourceType: string
-  sourceId: number
-  content: string
-  similarity: number
-}
-
-// Embedding stats
-export interface EmbeddingStats {
-  totalEmbeddings: number
-  byType: Record<string, number>
-  embeddingDimension: number
-  model: string
-}
-
-interface Settings {
-  temperature: number
-  maxTokens: number
-  contextLength: number
-  theme: 'dark' | 'light'
-  accentColor: string
-  autoSpeak: boolean
-  sttEnabled: boolean
-  ttsEnabled: boolean
-  modelPaths: string[]
-  systemPrompt: string  // Custom system prompt for LLM
+// Re-export types for components that import from store
+export type {
+  Message,
+  Session,
+  Model,
+  VoiceProfile,
+  VoiceRecording,
+  MemoryEntry,
+  UserPersona,
+  GlobalMessage,
+  DataStats,
+  GpuInfo,
+  SearchResult,
+  EmbeddingStats,
+  Settings,
 }
 
 // ==================== STORE ====================

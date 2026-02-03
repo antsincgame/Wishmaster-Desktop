@@ -11,6 +11,7 @@ static DB: OnceCell<Mutex<Connection>> = OnceCell::new();
 // ==================== Memory Types ====================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MemoryEntry {
     pub id: i64,
     pub content: String,
@@ -22,6 +23,7 @@ pub struct MemoryEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserPersona {
     pub id: i64,
     pub writing_style: String,     // formal, casual, technical, etc.
@@ -36,6 +38,7 @@ pub struct UserPersona {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportData {
     pub sessions: Vec<Session>,
     pub messages: Vec<ExportMessage>,
@@ -45,6 +48,7 @@ pub struct ExportData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportMessage {
     pub id: i64,
     pub session_id: i64,
