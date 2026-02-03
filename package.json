@@ -13,8 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "validate": "node scripts/validate-build.js",
-    "validate:full": "node scripts/validate-build.js --full",
+    "validate": "node scripts/validate-build.cjs",
+    "validate:full": "node scripts/validate-build.cjs --full",
     "typecheck": "tsc --noEmit",
     "lint:types": "tsc --noEmit"
   },
