@@ -71,21 +71,37 @@ export interface GlobalMessage {
 }
 
 export interface DataStats {
-  total_sessions: number
-  total_messages: number
-  user_messages: number
-  assistant_messages: number
-  total_memories: number
-  total_characters: number
-  estimated_tokens: number
+  totalSessions: number
+  totalMessages: number
+  userMessages: number
+  assistantMessages: number
+  totalMemories: number
+  totalCharacters: number
+  estimatedTokens: number
 }
 
 export interface GpuInfo {
   available: boolean
   backend: string
-  device_name: string
-  vram_total_mb: number
-  vram_free_mb: number
+  deviceName: string
+  vramTotalMb: number
+  vramFreeMb: number
+}
+
+// Semantic search result
+export interface SearchResult {
+  sourceType: string
+  sourceId: number
+  content: string
+  similarity: number
+}
+
+// Embedding stats
+export interface EmbeddingStats {
+  totalEmbeddings: number
+  byType: Record<string, number>
+  embeddingDimension: number
+  model: string
 }
 
 interface Settings {
@@ -98,6 +114,7 @@ interface Settings {
   sttEnabled: boolean
   ttsEnabled: boolean
   modelPaths: string[]
+  systemPrompt: string  // Custom system prompt for LLM
 }
 
 // ==================== STORE ====================
@@ -169,6 +186,12 @@ interface AppState {
   exportShareGPT: () => Promise<string>
   exportFull: () => Promise<string>
   
+  // Semantic Search (RAG)
+  embeddingStats: EmbeddingStats | null
+  semanticSearch: (query: string, limit?: number) => Promise<SearchResult[]>
+  indexAllMessages: () => Promise<number>
+  loadEmbeddingStats: () => Promise<void>
+  
   // Voice
   loadVoiceProfiles: () => Promise<void>
   createVoiceProfile: (name: string, audioPath: string) => Promise<void>
@@ -208,11 +231,13 @@ export const useStore = create<AppState>((set, get) => ({
     sttEnabled: true,
     ttsEnabled: true,
     modelPaths: [] as string[],
+    systemPrompt: 'Ты - Wishmaster, умный AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке.',
   },
   // Memory system state
   memories: [],
   persona: null,
   dataStats: null,
+  embeddingStats: null,
 
   // ==================== Settings ====================
   
@@ -560,6 +585,37 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error('Failed to export full:', e)
       throw e
+    }
+  },
+
+  // ==================== SEMANTIC SEARCH (RAG) ====================
+  
+  semanticSearch: async (query, limit = 10) => {
+    try {
+      return await invoke<SearchResult[]>('find_rag_context', { query, limit })
+    } catch (e) {
+      console.error('Failed to semantic search:', e)
+      return []
+    }
+  },
+
+  indexAllMessages: async () => {
+    try {
+      const count = await invoke<number>('index_all_messages')
+      await get().loadEmbeddingStats()
+      return count
+    } catch (e) {
+      console.error('Failed to index messages:', e)
+      throw e
+    }
+  },
+
+  loadEmbeddingStats: async () => {
+    try {
+      const stats = await invoke<EmbeddingStats>('get_embedding_stats')
+      set({ embeddingStats: stats })
+    } catch (e) {
+      console.error('Failed to load embedding stats:', e)
     }
   },
 

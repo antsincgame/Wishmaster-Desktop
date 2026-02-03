@@ -16,6 +16,7 @@ static CONTEXT_SIZE: OnceCell<Mutex<u32>> = OnceCell::new();
 static GPU_AVAILABLE: OnceCell<bool> = OnceCell::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GpuInfo {
     pub available: bool,
     pub backend: String,

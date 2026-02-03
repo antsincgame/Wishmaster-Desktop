@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useStore } from '../store'
+import { useStore, SearchResult } from '../store'
 import clsx from 'clsx'
 
 const MEMORY_CATEGORIES = [
@@ -16,30 +16,42 @@ export function MemoryPage() {
     memories, 
     persona, 
     dataStats,
+    embeddingStats,
     loadMemories, 
     addMemory, 
     deleteMemory,
     analyzePersona,
     loadPersona,
     loadDataStats,
+    loadEmbeddingStats,
+    semanticSearch,
+    indexAllMessages,
     exportAlpaca,
     exportShareGPT,
     exportFull,
   } = useStore()
 
-  const [activeTab, setActiveTab] = useState<'memory' | 'persona' | 'export'>('memory')
+  const [activeTab, setActiveTab] = useState<'search' | 'memory' | 'persona' | 'export'>('search')
   const [newMemory, setNewMemory] = useState('')
   const [newCategory, setNewCategory] = useState('fact')
   const [newImportance, setNewImportance] = useState(5)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  
+  // Semantic search state
+  const [semanticQuery, setSemanticQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [isIndexing, setIsIndexing] = useState(false)
+  const [indexedCount, setIndexedCount] = useState<number | null>(null)
 
   useEffect(() => {
     loadMemories()
     loadPersona()
     loadDataStats()
-  }, [loadMemories, loadPersona, loadDataStats])
+    loadEmbeddingStats()
+  }, [loadMemories, loadPersona, loadDataStats, loadEmbeddingStats])
 
   const handleAddMemory = useCallback(async () => {
     if (!newMemory.trim()) return
@@ -51,6 +63,32 @@ export function MemoryPage() {
       console.error('Failed to add memory:', e)
     }
   }, [newMemory, newCategory, newImportance, addMemory])
+
+  const handleSemanticSearch = useCallback(async () => {
+    if (!semanticQuery.trim()) return
+    setIsSearching(true)
+    try {
+      const results = await semanticSearch(semanticQuery.trim(), 20)
+      setSearchResults(results)
+    } catch (e) {
+      console.error('Semantic search failed:', e)
+    } finally {
+      setIsSearching(false)
+    }
+  }, [semanticQuery, semanticSearch])
+
+  const handleIndexAll = useCallback(async () => {
+    setIsIndexing(true)
+    setIndexedCount(null)
+    try {
+      const count = await indexAllMessages()
+      setIndexedCount(count)
+    } catch (e) {
+      console.error('Indexing failed:', e)
+    } finally {
+      setIsIndexing(false)
+    }
+  }, [indexAllMessages])
 
   const handleAnalyzePersona = useCallback(async () => {
     setIsAnalyzing(true)
@@ -102,16 +140,27 @@ export function MemoryPage() {
               Долговременная память AI и создание вашего цифрового клона
             </p>
           </div>
-          {dataStats && (
-            <div className="text-right text-xs text-gray-500">
-              <p>{dataStats.total_messages.toLocaleString()} сообщений</p>
-              <p>~{dataStats.estimated_tokens.toLocaleString()} токенов</p>
-            </div>
-          )}
+{dataStats && (
+                  <div className="text-right text-xs text-gray-500">
+                    <p>{dataStats.totalMessages.toLocaleString()} сообщений</p>
+                    <p>~{dataStats.estimatedTokens.toLocaleString()} токенов</p>
+                  </div>
+                )}
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2 mt-4">
+          <button
+            onClick={() => setActiveTab('search')}
+            className={clsx(
+              'px-4 py-2 rounded-lg text-sm transition-all',
+              activeTab === 'search'
+                ? 'bg-neon-yellow/20 border border-neon-yellow text-neon-yellow'
+                : 'border border-cyber-border text-gray-400 hover:text-white'
+            )}
+          >
+            🔍 Поиск
+          </button>
           <button
             onClick={() => setActiveTab('memory')}
             className={clsx(
@@ -149,6 +198,129 @@ export function MemoryPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {/* Search Tab */}
+        {activeTab === 'search' && (
+          <div className="space-y-6">
+            {/* Embedding Stats */}
+            <section className="p-4 rounded-xl border border-neon-yellow/30 bg-neon-yellow/5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-neon-yellow">🔍 Семантический поиск</h3>
+                  <p className="text-xs text-gray-500">
+                    Поиск по смыслу с использованием AI embeddings (multilingual-e5-small)
+                  </p>
+                </div>
+                {embeddingStats && (
+                  <div className="text-right text-xs">
+                    <p className="text-neon-cyan">{embeddingStats.totalEmbeddings} проиндексировано</p>
+                    <p className="text-gray-500">Размерность: {embeddingStats.embeddingDimension}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Index status */}
+              <div className="flex items-center gap-4 mb-4 p-3 rounded-lg bg-cyber-dark border border-cyber-border">
+                <div className="flex-1">
+                  <p className="text-sm text-gray-400">
+                    {embeddingStats?.totalEmbeddings === 0 
+                      ? 'Сообщения не проиндексированы. Нажмите "Индексировать" для включения семантического поиска.'
+                      : `Проиндексировано ${embeddingStats?.totalEmbeddings || 0} элементов`}
+                  </p>
+                  {indexedCount !== null && (
+                    <p className="text-sm text-neon-green mt-1">✓ Только что проиндексировано: {indexedCount}</p>
+                  )}
+                </div>
+                <button
+                  onClick={handleIndexAll}
+                  disabled={isIndexing}
+                  className={clsx(
+                    'px-4 py-2 rounded-lg border transition-all',
+                    isIndexing
+                      ? 'border-gray-600 text-gray-600 cursor-not-allowed'
+                      : 'border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10'
+                  )}
+                >
+                  {isIndexing ? '⏳ Индексирую...' : '📊 Индексировать всё'}
+                </button>
+              </div>
+
+              {/* Search input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={semanticQuery}
+                  onChange={(e) => setSemanticQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSemanticSearch()}
+                  placeholder="Введите запрос для семантического поиска..."
+                  className="flex-1 px-4 py-3 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-yellow focus:outline-none"
+                />
+                <button
+                  onClick={handleSemanticSearch}
+                  disabled={isSearching || !semanticQuery.trim()}
+                  className={clsx(
+                    'px-6 py-3 rounded-lg font-bold transition-all',
+                    isSearching || !semanticQuery.trim()
+                      ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                      : 'bg-neon-yellow text-black hover:bg-neon-yellow/80'
+                  )}
+                >
+                  {isSearching ? '⏳' : '🔍 Искать'}
+                </button>
+              </div>
+            </section>
+
+            {/* Search Results */}
+            {searchResults.length > 0 && (
+              <section className="p-4 rounded-xl border border-cyber-border bg-cyber-surface">
+                <h3 className="text-lg font-bold text-neon-yellow mb-4">
+                  📋 Результаты ({searchResults.length})
+                </h3>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {searchResults.map((result, index) => (
+                    <div
+                      key={`${result.sourceType}-${result.sourceId}-${index}`}
+                      className="p-4 rounded-lg bg-cyber-dark border border-cyber-border hover:border-neon-yellow/50 transition-all"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={clsx(
+                          'px-2 py-0.5 rounded text-xs',
+                          result.sourceType === 'message' 
+                            ? 'bg-neon-cyan/20 text-neon-cyan' 
+                            : 'bg-neon-magenta/20 text-neon-magenta'
+                        )}>
+                          {result.sourceType === 'message' ? '💬 Сообщение' : '🧠 Память'}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          Сходство: <span className="text-neon-green">{Math.round(result.similarity * 100)}%</span>
+                        </span>
+                      </div>
+                      <p className="text-gray-200">{result.content}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {searchResults.length === 0 && semanticQuery && !isSearching && (
+              <div className="text-center py-12 text-gray-500">
+                <p className="text-4xl mb-4">🔍</p>
+                <p>Ничего не найдено</p>
+                <p className="text-sm mt-2">Попробуйте другой запрос или проиндексируйте сообщения</p>
+              </div>
+            )}
+
+            {/* Info */}
+            <section className="p-4 rounded-xl border border-neon-yellow/30 bg-neon-yellow/5">
+              <h4 className="text-md font-bold text-neon-yellow mb-2">💡 Как это работает?</h4>
+              <p className="text-sm text-gray-400">
+                Семантический поиск использует AI для понимания <strong>смысла</strong> вашего запроса, 
+                а не просто ключевых слов. Модель multilingual-e5-small преобразует текст в векторы 
+                и находит похожие по смыслу сообщения и воспоминания.
+              </p>
+            </section>
+          </div>
+        )}
+
         {/* Memory Tab */}
         {activeTab === 'memory' && (
           <div className="space-y-6">
@@ -343,27 +515,27 @@ export function MemoryPage() {
                 <h3 className="text-lg font-bold text-neon-green mb-4">📊 Статистика данных</h3>
                 <div className="grid grid-cols-3 gap-4">
                   <div className="p-4 rounded-lg bg-cyber-dark border border-cyber-border text-center">
-                    <p className="text-3xl font-bold text-neon-cyan">{dataStats.total_sessions}</p>
+                    <p className="text-3xl font-bold text-neon-cyan">{dataStats.totalSessions}</p>
                     <p className="text-xs text-gray-500">Сессий</p>
                   </div>
                   <div className="p-4 rounded-lg bg-cyber-dark border border-cyber-border text-center">
-                    <p className="text-3xl font-bold text-neon-magenta">{dataStats.total_messages.toLocaleString()}</p>
+                    <p className="text-3xl font-bold text-neon-magenta">{dataStats.totalMessages.toLocaleString()}</p>
                     <p className="text-xs text-gray-500">Сообщений</p>
                   </div>
                   <div className="p-4 rounded-lg bg-cyber-dark border border-cyber-border text-center">
-                    <p className="text-3xl font-bold text-neon-green">~{dataStats.estimated_tokens.toLocaleString()}</p>
+                    <p className="text-3xl font-bold text-neon-green">~{dataStats.estimatedTokens.toLocaleString()}</p>
                     <p className="text-xs text-gray-500">Токенов</p>
                   </div>
                   <div className="p-4 rounded-lg bg-cyber-dark border border-cyber-border text-center">
-                    <p className="text-3xl font-bold text-neon-yellow">{dataStats.user_messages.toLocaleString()}</p>
+                    <p className="text-3xl font-bold text-neon-yellow">{dataStats.userMessages.toLocaleString()}</p>
                     <p className="text-xs text-gray-500">Ваших сообщений</p>
                   </div>
                   <div className="p-4 rounded-lg bg-cyber-dark border border-cyber-border text-center">
-                    <p className="text-3xl font-bold text-gray-400">{dataStats.assistant_messages.toLocaleString()}</p>
+                    <p className="text-3xl font-bold text-gray-400">{dataStats.assistantMessages.toLocaleString()}</p>
                     <p className="text-xs text-gray-500">Ответов AI</p>
                   </div>
                   <div className="p-4 rounded-lg bg-cyber-dark border border-cyber-border text-center">
-                    <p className="text-3xl font-bold text-purple-400">{dataStats.total_memories}</p>
+                    <p className="text-3xl font-bold text-purple-400">{dataStats.totalMemories}</p>
                     <p className="text-xs text-gray-500">В памяти</p>
                   </div>
                 </div>

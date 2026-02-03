@@ -114,6 +114,36 @@ export function SettingsPage() {
           </div>
         </section>
 
+        {/* System Prompt */}
+        <section className="p-4 rounded-xl border border-cyber-border bg-cyber-surface">
+          <h3 className="text-lg font-bold text-neon-green mb-4">
+            🤖 Системный промпт
+          </h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Инструкции для AI, определяющие его поведение и стиль ответов
+          </p>
+          <textarea
+            value={settings.systemPrompt}
+            onChange={(e) => handleSave({ systemPrompt: e.target.value })}
+            rows={4}
+            placeholder="Опишите, как должен вести себя AI..."
+            className="w-full px-4 py-3 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-green focus:outline-none resize-none"
+          />
+          <div className="flex justify-between items-center mt-2">
+            <p className="text-xs text-gray-500">
+              {settings.systemPrompt.length} символов
+            </p>
+            <button
+              onClick={() => handleSave({ 
+                systemPrompt: 'Ты - Wishmaster, умный AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке.'
+              })}
+              className="text-xs text-gray-400 hover:text-neon-cyan"
+            >
+              Сбросить по умолчанию
+            </button>
+          </div>
+        </section>
+
         {/* Voice settings */}
         <section className="p-4 rounded-xl border border-cyber-border bg-cyber-surface">
           <h3 className="text-lg font-bold text-neon-magenta mb-4">

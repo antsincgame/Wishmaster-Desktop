@@ -30,6 +30,12 @@ pub struct Settings {
     pub tts_enabled: bool,
     #[serde(rename = "modelPaths")]
     pub model_paths: Vec<String>,
+    #[serde(rename = "systemPrompt", default = "default_system_prompt")]
+    pub system_prompt: String,
+}
+
+fn default_system_prompt() -> String {
+    "Ты - Wishmaster, умный AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке.".to_string()
 }
 
 impl Default for Settings {
@@ -44,6 +50,7 @@ impl Default for Settings {
             stt_enabled: true,
             tts_enabled: true,
             model_paths: Vec::new(),
+            system_prompt: default_system_prompt(),
         }
     }
 }
@@ -428,12 +435,13 @@ pub async fn generate(
 ) -> Result<(), String> {
     STOP_GENERATION.store(false, Ordering::SeqCst);
     
+    // Get user's custom system prompt
+    let settings = database::get_settings().unwrap_or_default();
+    
     // Build prompt with ChatML format including MEMORY
     let mut full_prompt = String::from("<|im_start|>system\n");
-    full_prompt.push_str("Ты - Wishmaster, умный AI-ассистент с долговременной памятью. ");
-    full_prompt.push_str("Ты помнишь ВСЕ предыдущие разговоры и используешь эту информацию. ");
-    full_prompt.push_str("Отвечай кратко и по делу на русском языке. ");
-    full_prompt.push_str("НЕ повторяй вопрос пользователя.\n\n");
+    full_prompt.push_str(&settings.system_prompt);
+    full_prompt.push_str("\nТы помнишь ВСЕ предыдущие разговоры и используешь эту информацию.\n\n");
     
     // Add important memories
     if let Ok(memories) = database::get_top_memories(5) {

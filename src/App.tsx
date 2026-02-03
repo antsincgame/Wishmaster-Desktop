@@ -19,7 +19,7 @@ const ACCENT_COLORS: Record<string, { primary: string; glow: string }> = {
 }
 
 function App() {
-  const { settings, loadSettings, loadModels, loadSessions, loadMemories, loadPersona, loadDataStats, loadGpuInfo } = useStore()
+  const { settings, loadSettings, loadModels, loadSessions, loadMemories, loadPersona, loadDataStats, loadGpuInfo, loadEmbeddingStats } = useStore()
 
   useEffect(() => {
     // Initialize app
@@ -31,7 +31,8 @@ function App() {
     loadMemories()
     loadPersona()
     loadDataStats()
-  }, [loadSettings, loadModels, loadSessions, loadMemories, loadPersona, loadDataStats, loadGpuInfo])
+    loadEmbeddingStats()  // Load embedding statistics
+  }, [loadSettings, loadModels, loadSessions, loadMemories, loadPersona, loadDataStats, loadGpuInfo, loadEmbeddingStats])
 
   // Apply theme to document
   useEffect(() => {

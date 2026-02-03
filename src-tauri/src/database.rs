@@ -247,6 +247,7 @@ pub fn get_settings() -> Result<Settings> {
             "sttEnabled" => settings.stt_enabled = value == "true",
             "ttsEnabled" => settings.tts_enabled = value == "true",
             "modelPaths" => settings.model_paths = serde_json::from_str(&value).unwrap_or_default(),
+            "systemPrompt" => settings.system_prompt = value,
             _ => {}
         }
     }
@@ -268,6 +269,7 @@ pub fn save_settings(settings: &Settings) -> Result<()> {
         ("sttEnabled", settings.stt_enabled.to_string()),
         ("ttsEnabled", settings.tts_enabled.to_string()),
         ("modelPaths", model_paths_json),
+        ("systemPrompt", settings.system_prompt.clone()),
     ];
     
     for (key, value) in pairs {
@@ -729,13 +731,13 @@ pub fn get_data_stats() -> Result<serde_json::Value> {
     )?;
     
     Ok(serde_json::json!({
-        "total_sessions": total_sessions,
-        "total_messages": total_messages,
-        "user_messages": user_messages,
-        "assistant_messages": total_messages - user_messages,
-        "total_memories": total_memories,
-        "total_characters": total_chars,
-        "estimated_tokens": total_chars / 4  // rough estimate
+        "totalSessions": total_sessions,
+        "totalMessages": total_messages,
+        "userMessages": user_messages,
+        "assistantMessages": total_messages - user_messages,
+        "totalMemories": total_memories,
+        "totalCharacters": total_chars,
+        "estimatedTokens": total_chars / 4  // rough estimate
     }))
 }
 
