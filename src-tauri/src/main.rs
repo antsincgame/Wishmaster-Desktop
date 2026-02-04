@@ -126,6 +126,12 @@ fn main() {
             commands::get_popular_models,
             commands::download_hf_model,
             commands::get_models_dir,
+            // AWQ Conversion
+            commands::check_awq_python,
+            commands::install_awq_dependencies,
+            commands::convert_awq_to_gguf,
+            commands::is_awq_model,
+            commands::suggest_gguf_alternative,
         ])
         .run(tauri::generate_context!());
     

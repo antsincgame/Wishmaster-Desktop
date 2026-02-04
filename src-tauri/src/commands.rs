@@ -885,6 +885,233 @@ pub fn get_models_dir() -> Result<String, String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+// ==================== AWQ Conversion Commands ====================
+
+/// AWQ conversion progress information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwqConversionProgress {
+    pub stage: String,
+    pub percent: f32,
+    pub message: String,
+    pub error: Option<String>,
+}
+
+/// Python environment status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PythonStatus {
+    pub python_version: Option<String>,
+    pub python_ok: bool,
+    pub dependencies: std::collections::HashMap<String, Option<String>>,
+    pub all_installed: bool,
+    pub cuda_available: bool,
+    pub cuda_device: Option<String>,
+}
+
+/// Check if Python and AWQ dependencies are available
+#[tauri::command]
+pub async fn check_awq_python(app: AppHandle) -> Result<PythonStatus, String> {
+    use std::process::Command;
+    
+    // Find Python
+    let python_cmd = find_python().ok_or("Python не найден")?;
+    
+    // Get converter script path
+    let converter_path = get_converter_script_path(&app)?;
+    
+    // Run check command
+    let output = Command::new(&python_cmd)
+        .arg(&converter_path)
+        .arg("--check")
+        .output()
+        .map_err(|e| format!("Ошибка запуска Python: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Python check failed: {}", stderr));
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    serde_json::from_str(&stdout)
+        .map_err(|e| format!("Ошибка парсинга результата: {}", e))
+}
+
+/// Install AWQ conversion dependencies
+#[tauri::command]
+pub async fn install_awq_dependencies(app: AppHandle) -> Result<bool, String> {
+    use std::process::Command;
+    
+    let python_cmd = find_python().ok_or("Python не найден")?;
+    let converter_path = get_converter_script_path(&app)?;
+    
+    // Run install command
+    let output = Command::new(&python_cmd)
+        .arg(&converter_path)
+        .arg("--install")
+        .output()
+        .map_err(|e| format!("Ошибка запуска установки: {}", e))?;
+    
+    Ok(output.status.success())
+}
+
+/// Convert AWQ model to GGUF
+#[tauri::command]
+pub async fn convert_awq_to_gguf(
+    app: AppHandle,
+    repo_id: String,
+    quant_type: String,
+) -> Result<String, String> {
+    use std::process::{Command, Stdio};
+    use std::io::{BufRead, BufReader};
+    
+    let python_cmd = find_python().ok_or("Python не найден")?;
+    let converter_path = get_converter_script_path(&app)?;
+    
+    // Prepare output path
+    let models_dir = hf_models::get_models_dir()?;
+    let safe_name = repo_id.replace('/', "_");
+    let output_path = models_dir.join(format!("{}-{}.gguf", safe_name, quant_type.to_lowercase()));
+    
+    // Spawn conversion process
+    let mut child = Command::new(&python_cmd)
+        .arg(&converter_path)
+        .arg("--convert")
+        .arg(&repo_id)
+        .arg("--output")
+        .arg(&output_path)
+        .arg("--quant")
+        .arg(&quant_type)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Ошибка запуска конвертации: {}", e))?;
+    
+    // Read stdout for progress updates
+    let stdout = child.stdout.take().ok_or("Не удалось получить stdout")?;
+    let reader = BufReader::new(stdout);
+    
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            // Try to parse as JSON progress
+            if let Ok(progress) = serde_json::from_str::<AwqConversionProgress>(&line) {
+                // Emit progress event
+                let _ = app.emit("awq-conversion-progress", &progress);
+                
+                // Check for error
+                if progress.error.is_some() {
+                    return Err(progress.error.unwrap());
+                }
+            }
+        }
+    }
+    
+    // Wait for process to finish
+    let status = child.wait()
+        .map_err(|e| format!("Ошибка ожидания процесса: {}", e))?;
+    
+    if !status.success() {
+        return Err("Конвертация завершилась с ошибкой".to_string());
+    }
+    
+    // Add to model paths
+    let output_str = output_path.to_string_lossy().to_string();
+    add_model_path(output_str.clone())?;
+    
+    Ok(output_str)
+}
+
+/// Check if a model is AWQ format (not GGUF)
+#[tauri::command]
+pub fn is_awq_model(repo_id: String) -> bool {
+    let lower = repo_id.to_lowercase();
+    lower.contains("awq") && !lower.contains("gguf")
+}
+
+/// Search for GGUF equivalent of an AWQ model
+#[tauri::command]
+pub fn suggest_gguf_alternative(repo_id: String) -> Option<String> {
+    // Simple heuristic: look for similar GGUF repos
+    let parts: Vec<&str> = repo_id.split('/').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    
+    let model_name = parts[1];
+    
+    // Common patterns for AWQ → GGUF
+    let suggestions = [
+        // If it's an AWQ model, suggest looking for GGUF version
+        (model_name.replace("-AWQ", "-GGUF"), "AWQ", "GGUF"),
+        (model_name.replace("-awq", "-GGUF"), "awq", "GGUF"),
+        (format!("{}-GGUF", model_name.replace("-AWQ", "").replace("-awq", "")), "", "GGUF"),
+    ];
+    
+    // Return first reasonable suggestion
+    for (suggested, _, _) in suggestions {
+        if suggested != model_name && suggested.contains("GGUF") {
+            return Some(suggested);
+        }
+    }
+    
+    None
+}
+
+// Helper: Find Python executable
+fn find_python() -> Option<String> {
+    // Try common Python commands
+    let candidates = ["python3", "python", "python3.11", "python3.10", "python3.9"];
+    
+    for cmd in candidates {
+        if std::process::Command::new(cmd)
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            return Some(cmd.to_string());
+        }
+    }
+    
+    // On Windows, also try py launcher
+    #[cfg(target_os = "windows")]
+    {
+        if std::process::Command::new("py")
+            .arg("-3")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            return Some("py -3".to_string());
+        }
+    }
+    
+    None
+}
+
+// Helper: Get converter script path
+fn get_converter_script_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    // Try to find in resources
+    let resource_path = app.path()
+        .resolve("resources/awq_converter.py", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("Не удалось найти скрипт конвертера: {}", e))?;
+    
+    if resource_path.exists() {
+        return Ok(resource_path);
+    }
+    
+    // Fallback: check in app data directory
+    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let fallback_path = app_dir.join("awq_converter.py");
+    
+    if fallback_path.exists() {
+        return Ok(fallback_path);
+    }
+    
+    Err("Скрипт конвертера не найден".to_string())
+}
+
 // ==================== TESTS ====================
 
 #[cfg(test)]

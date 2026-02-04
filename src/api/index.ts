@@ -24,6 +24,7 @@ import type {
   EmbeddingStats,
   HfModelFile,
   PopularModel,
+  PythonStatus,
 } from '../types';
 
 // ==================== ERROR HANDLING ====================
@@ -399,6 +400,48 @@ export const hfApi = {
     safeInvoke<string>('get_models_dir'),
 };
 
+// ==================== AWQ CONVERSION API ====================
+
+export const awqApi = {
+  /**
+   * Check if Python and AWQ dependencies are available
+   */
+  checkPython: () =>
+    safeInvoke<PythonStatus>('check_awq_python', undefined, {
+      pythonVersion: null,
+      pythonOk: false,
+      dependencies: {},
+      allInstalled: false,
+      cudaAvailable: false,
+      cudaDevice: null,
+    }),
+
+  /**
+   * Install AWQ conversion dependencies
+   */
+  installDependencies: () =>
+    safeInvoke<boolean>('install_awq_dependencies', undefined, false),
+
+  /**
+   * Convert AWQ model to GGUF
+   * Returns the local path to the converted file
+   */
+  convertToGguf: (repoId: string, quantType: string = 'Q4_K_M') =>
+    safeInvoke<string>('convert_awq_to_gguf', { repoId, quantType }),
+
+  /**
+   * Check if a model is AWQ format (not GGUF)
+   */
+  isAwqModel: (repoId: string) =>
+    safeInvoke<boolean>('is_awq_model', { repoId }, false),
+
+  /**
+   * Suggest GGUF alternative for an AWQ model
+   */
+  suggestGgufAlternative: (repoId: string) =>
+    safeInvoke<string | null>('suggest_gguf_alternative', { repoId }, null),
+};
+
 // ==================== COMBINED EXPORT ====================
 
 export const api = {
@@ -413,6 +456,7 @@ export const api = {
   voice: voiceApi,
   search: searchApi,
   hf: hfApi,
+  awq: awqApi,
 };
 
 export default api;

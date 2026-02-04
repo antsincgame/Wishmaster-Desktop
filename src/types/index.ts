@@ -347,6 +347,40 @@ export interface DownloadProgress {
   error: string | null;
 }
 
+// ==================== AWQ CONVERSION TYPES ====================
+
+/**
+ * Python environment status for AWQ conversion
+ */
+export interface PythonStatus {
+  /** Python version string */
+  pythonVersion: string | null;
+  /** Whether Python version meets minimum requirements */
+  pythonOk: boolean;
+  /** Map of dependency name to version (null if not installed) */
+  dependencies: Record<string, string | null>;
+  /** Whether all dependencies are installed */
+  allInstalled: boolean;
+  /** Whether CUDA is available for Python/PyTorch */
+  cudaAvailable: boolean;
+  /** CUDA device name if available */
+  cudaDevice: string | null;
+}
+
+/**
+ * AWQ conversion progress information
+ */
+export interface AwqConversionProgress {
+  /** Current stage: "download", "convert", "complete", "error" */
+  stage: string;
+  /** Progress percentage (0-100) */
+  percent: number;
+  /** Status message */
+  message: string;
+  /** Error message if failed */
+  error: string | null;
+}
+
 // ==================== API RESPONSE TYPES ====================
 
 /**
