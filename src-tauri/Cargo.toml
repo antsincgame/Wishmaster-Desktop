@@ -22,6 +22,7 @@ once_cell = "1"
 base64 = "0.21"
 thiserror = "1.0"  # Custom error types
 shellexpand = "3"  # Shell path expansion (~, $VAR)
+chrono = "0.4"     # Timestamps for logging
 
 # LLM - native llama.cpp bindings (CPU by default, CUDA optional)
 llama-cpp-2 = "0.1"

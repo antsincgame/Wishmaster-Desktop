@@ -248,11 +248,14 @@ fn floats_to_bytes(floats: &[f32]) -> Vec<u8> {
 }
 
 /// Convert bytes back to float array
+/// 
+/// Safety: chunks_exact(4) guarantees exactly 4 bytes per chunk,
+/// so the conversion to [u8; 4] will always succeed.
 fn bytes_to_floats(bytes: &[u8]) -> Vec<f32> {
     bytes.chunks_exact(4)
-        .map(|chunk| {
-            let arr: [u8; 4] = chunk.try_into().unwrap();
-            f32::from_le_bytes(arr)
+        .filter_map(|chunk| {
+            // chunks_exact(4) guarantees 4 bytes, but we're defensive
+            chunk.try_into().ok().map(|arr: [u8; 4]| f32::from_le_bytes(arr))
         })
         .collect()
 }

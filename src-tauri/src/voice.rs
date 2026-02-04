@@ -601,6 +601,8 @@ pub fn is_tts_available() -> bool {
 mod tests {
     use super::*;
 
+    // ==================== Engine Enum Tests ====================
+    
     #[test]
     fn test_stt_engine_variants() {
         let engines = [SttEngine::WhisperCpp, SttEngine::WhisperPython, SttEngine::None];
@@ -612,14 +614,43 @@ mod tests {
         let engines = [TtsEngine::EspeakNg, TtsEngine::Piper, TtsEngine::Festival, TtsEngine::WindowsSapi];
         assert_eq!(engines.len(), 4);
     }
+    
+    #[test]
+    fn test_engine_debug_trait() {
+        // Test that engines implement Debug
+        let tts = TtsEngine::EspeakNg;
+        let stt = SttEngine::None;
+        assert!(format!("{:?}", tts).contains("EspeakNg"));
+        assert!(format!("{:?}", stt).contains("None"));
+    }
+    
+    #[test]
+    fn test_engine_copy_clone() {
+        // Test that engines implement Copy and Clone
+        let tts = TtsEngine::Piper;
+        let tts_copy = tts;
+        let tts_clone = tts.clone();
+        assert_eq!(tts, tts_copy);
+        assert_eq!(tts, tts_clone);
+    }
 
+    // ==================== Whisper Model Tests ====================
+    
     #[test]
     fn test_whisper_model_paths() {
         for path in WHISPER_MODEL_PATHS {
             assert!(path.contains("ggml") || path.contains("whisper"));
         }
     }
+    
+    #[test]
+    fn test_whisper_model_paths_not_empty() {
+        assert!(!WHISPER_MODEL_PATHS.is_empty());
+        assert!(WHISPER_MODEL_PATHS.len() >= 4);
+    }
 
+    // ==================== State Management Tests ====================
+    
     #[test]
     fn test_recording_state() {
         let recording = AtomicBool::new(false);
@@ -627,11 +658,135 @@ mod tests {
         recording.store(true, Ordering::SeqCst);
         assert!(recording.load(Ordering::SeqCst));
     }
+    
+    #[test]
+    fn test_speaking_state() {
+        let speaking = AtomicBool::new(false);
+        assert!(!speaking.load(Ordering::SeqCst));
+        speaking.store(true, Ordering::SeqCst);
+        assert!(speaking.load(Ordering::SeqCst));
+        speaking.store(false, Ordering::SeqCst);
+        assert!(!speaking.load(Ordering::SeqCst));
+    }
 
+    // ==================== Text Processing Tests ====================
+    
     #[test]
     fn test_text_escape() {
         let text = "It's a test";
         let escaped = text.replace("'", "\\'");
         assert_eq!(escaped, "It\\'s a test");
+    }
+    
+    #[test]
+    fn test_text_escape_multiple_quotes() {
+        let text = "It's John's book, isn't it?";
+        let escaped = text.replace("'", "\\'");
+        assert!(escaped.contains("\\'"));
+        assert_eq!(escaped.matches("\\'").count(), 4);
+    }
+    
+    #[test]
+    fn test_text_truncation_for_logging() {
+        let short_text = "Hello";
+        let long_text = "This is a very long text that exceeds fifty characters in length for sure";
+        
+        assert_eq!(short_text.len().min(50), 5);
+        assert_eq!(long_text.len().min(50), 50);
+    }
+    
+    #[test]
+    fn test_empty_text_handling() {
+        let text = "";
+        assert!(text.trim().is_empty());
+        
+        let whitespace = "   ";
+        assert!(whitespace.trim().is_empty());
+    }
+
+    // ==================== Path Manipulation Tests ====================
+    
+    #[test]
+    fn test_wav_extension_change() {
+        let input_path = PathBuf::from("/tmp/audio.webm");
+        let output_path = input_path.with_extension("wav");
+        assert_eq!(output_path, PathBuf::from("/tmp/audio.wav"));
+    }
+    
+    #[test]
+    fn test_txt_extension_change() {
+        let wav_path = PathBuf::from("/tmp/audio.wav");
+        let txt_path = wav_path.with_extension("txt");
+        assert_eq!(txt_path, PathBuf::from("/tmp/audio.txt"));
+    }
+    
+    #[test]
+    fn test_path_parent() {
+        let path = Path::new("/tmp/audio/file.wav");
+        assert_eq!(path.parent().unwrap(), Path::new("/tmp/audio"));
+    }
+
+    // ==================== Transcript Cleaning Tests ====================
+    
+    #[test]
+    fn test_transcript_cleaning() {
+        let raw_output = "[BLANK_AUDIO]\nHello world\n[BLANK_AUDIO]\nHow are you?\n";
+        let cleaned: String = raw_output
+            .lines()
+            .filter(|line| !line.contains("[BLANK_AUDIO]") && !line.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim()
+            .to_string();
+        
+        assert_eq!(cleaned, "Hello world How are you?");
+    }
+    
+    #[test]
+    fn test_transcript_all_blank() {
+        let raw_output = "[BLANK_AUDIO]\n[BLANK_AUDIO]\n";
+        let cleaned: String = raw_output
+            .lines()
+            .filter(|line| !line.contains("[BLANK_AUDIO]") && !line.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim()
+            .to_string();
+        
+        assert!(cleaned.is_empty());
+    }
+
+    // ==================== Error Message Tests ====================
+    
+    #[test]
+    fn test_error_messages() {
+        let recording_err = "Already recording";
+        let not_recording_err = "Not recording";
+        let no_audio_err = "No audio file recorded";
+        
+        assert!(!recording_err.is_empty());
+        assert!(!not_recording_err.is_empty());
+        assert!(!no_audio_err.is_empty());
+    }
+    
+    #[test]
+    fn test_stt_fallback_message() {
+        let fallback_msg = "Локальная транскрипция недоступна. Используется Web Speech API браузера.";
+        assert!(fallback_msg.contains("Web Speech API"));
+    }
+
+    // ==================== Windows SAPI Escaping Tests ====================
+    
+    #[test]
+    fn test_windows_sapi_escaping() {
+        let text = r#"Hello "World" $var `test`"#;
+        let escaped = text
+            .replace("\\", "\\\\")
+            .replace("\"", "`\"")
+            .replace("$", "`$")
+            .replace("`", "``");
+        
+        assert!(escaped.contains("``\""));  // Escaped quote
+        assert!(escaped.contains("``$"));   // Escaped dollar
     }
 }

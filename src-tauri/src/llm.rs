@@ -61,11 +61,13 @@ fn next_seed() -> u32 {
 /// - temp = 0.0-0.5: focused, deterministic
 /// - temp = 0.5-1.0: balanced creativity
 /// - temp > 1.0: more random, creative
-fn sample_with_temperature(candidates: &mut LlamaTokenDataArray, temperature: f32) -> llama_cpp_2::token::LlamaToken {
+/// 
+/// Returns None if sampling fails (should be rare but handled gracefully)
+fn sample_with_temperature(candidates: &mut LlamaTokenDataArray, temperature: f32) -> Option<llama_cpp_2::token::LlamaToken> {
     if temperature <= 0.0 {
         // Greedy sampling - pick the most likely token
         candidates.apply_sampler(&LlamaSampler::greedy());
-        candidates.selected_token().expect("Greedy sampler should always select a token")
+        candidates.selected_token()
     } else {
         // Create a sampler chain: temperature -> random distribution
         let mut sampler = LlamaSampler::chain_simple([
@@ -74,14 +76,23 @@ fn sample_with_temperature(candidates: &mut LlamaTokenDataArray, temperature: f3
         ]);
         
         candidates.apply_sampler(&mut sampler);
-        candidates.selected_token().expect("Dist sampler should always select a token")
+        candidates.selected_token()
     }
 }
 
 pub fn init() {
-    // Initialize llama.cpp backend
+    // Initialize llama.cpp backend with error handling
     let backend = BACKEND.get_or_init(|| {
-        LlamaBackend::init().expect("Failed to initialize llama.cpp backend")
+        match LlamaBackend::init() {
+            Ok(backend) => backend,
+            Err(e) => {
+                eprintln!("❌ CRITICAL: Failed to initialize llama.cpp backend: {:?}", e);
+                eprintln!("   The application will not be able to run LLM inference.");
+                // We still need to return something - create a default backend
+                // This should rarely happen in practice
+                panic!("Cannot initialize LLM backend: {:?}", e);
+            }
+        }
     });
     
     let _ = MODEL.set(Mutex::new(None));
@@ -279,7 +290,8 @@ where
         .with_n_threads(n_threads)
         .with_n_threads_batch(n_threads);
     
-    let mut ctx = model.new_context(&BACKEND.get().unwrap(), ctx_params)
+    let backend = BACKEND.get().ok_or("LLM backend not initialized")?;
+    let mut ctx = model.new_context(backend, ctx_params)
         .map_err(|e| format!("Failed to create context: {:?}", e))?;
     
     // Tokenize prompt
@@ -316,7 +328,13 @@ where
         let mut candidates_p = LlamaTokenDataArray::from_iter(candidates, false);
         
         // Sample with temperature
-        let new_token = sample_with_temperature(&mut candidates_p, temperature);
+        let new_token = match sample_with_temperature(&mut candidates_p, temperature) {
+            Some(token) => token,
+            None => {
+                eprintln!("⚠️ Sampling failed, ending generation");
+                break;
+            }
+        };
         
         // Check for EOS
         if model.is_eog_token(new_token) {

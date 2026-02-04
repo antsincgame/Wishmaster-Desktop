@@ -31,7 +31,7 @@ jobs:
     - name: Show CUDA info
       run: |
         echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
-        nvcc --version
+        nvcc --version 2>&1 || echo "nvcc not found, but continuing..."
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable

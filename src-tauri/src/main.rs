@@ -8,6 +8,7 @@ mod embeddings;
 mod errors;
 mod hf_models;
 mod llm;
+mod logging;
 mod voice;
 
 use tauri::Manager;

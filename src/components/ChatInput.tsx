@@ -233,7 +233,6 @@ export function ChatInput() {
           
           if (silenceDuration >= SILENCE_THRESHOLD_MS) {
             // 3 seconds of silence - auto-stop and send
-            console.log('Auto-stopping after 3s silence')
             stopVoiceRecording(true)
           }
         } else {

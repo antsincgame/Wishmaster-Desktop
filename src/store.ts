@@ -217,7 +217,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ gpuInfoLoading: true })
     try {
       const gpuInfo = await invoke<GpuInfo>('get_gpu_info')
-      console.log('GPU Info:', gpuInfo)
+      // GPU info loaded successfully
       set({ gpuInfo, gpuInfoLoading: false })
     } catch (e) {
       console.error('Failed to load GPU info:', e)

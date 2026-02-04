@@ -999,8 +999,8 @@ pub async fn convert_awq_to_gguf(
                 let _ = app.emit("awq-conversion-progress", &progress);
                 
                 // Check for error
-                if progress.error.is_some() {
-                    return Err(progress.error.unwrap());
+                if let Some(err) = progress.error {
+                    return Err(err);
                 }
             }
         }
