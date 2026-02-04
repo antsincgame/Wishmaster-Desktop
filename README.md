@@ -27,7 +27,6 @@
 |----------|--------|--------|
 | 🐧 Linux | **AppImage** (single file!) | ✅ |
 | 🪟 Windows | MSI / EXE | ✅ |
-| 🍎 macOS | DMG / .app | ✅ |
 
 ### 📦 Linux AppImage
 
@@ -95,12 +94,6 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget \
 ### Windows
 
 Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with "Desktop development with C++".
-
-### macOS
-
-```bash
-xcode-select --install
-```
 
 ## 🧠 Memory System
 
@@ -216,7 +209,6 @@ MIT License
 |-----------|--------|--------|
 | 🐧 Linux | **AppImage** (один файл!) | ✅ |
 | 🪟 Windows | MSI / EXE | ✅ |
-| 🍎 macOS | DMG / .app | ✅ |
 
 ### 📦 Linux AppImage
 
@@ -284,12 +276,6 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget \
 ### Windows
 
 Установите [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) с компонентом "Desktop development with C++".
-
-### macOS
-
-```bash
-xcode-select --install
-```
 
 ## 🧠 Система памяти
 

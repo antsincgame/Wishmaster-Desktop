@@ -43,7 +43,7 @@ $buildArgs = @("build")
 if ($Release) {
     $buildArgs += "--release"
 }
-$buildArgs += "--features", "llm-cuda"
+$buildArgs += "--features", "cuda"
 
 cargo @buildArgs
 if ($LASTEXITCODE -ne 0) { 

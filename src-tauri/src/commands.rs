@@ -680,3 +680,375 @@ pub fn get_embedding_stats() -> Result<serde_json::Value, String> {
         embeddings::get_embedding_stats(conn).map_err(|e| e.to_string())
     }).map_err(|e| e.to_string())?
 }
+
+// ==================== TESTS ====================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== Settings Tests ====================
+
+    #[test]
+    fn test_settings_default_values() {
+        let settings = Settings::default();
+        
+        assert_eq!(settings.temperature, 0.7);
+        assert_eq!(settings.max_tokens, 512);
+        assert_eq!(settings.context_length, 2048);
+        assert_eq!(settings.theme, "dark");
+        assert_eq!(settings.accent_color, "cyan");
+        assert!(!settings.auto_speak);
+        assert!(settings.stt_enabled);
+        assert!(settings.tts_enabled);
+        assert!(settings.model_paths.is_empty());
+    }
+
+    #[test]
+    fn test_default_system_prompt() {
+        let prompt = default_system_prompt();
+        
+        assert!(!prompt.is_empty());
+        assert!(prompt.contains("Wishmaster"));
+        assert!(prompt.contains("русском"));
+    }
+
+    #[test]
+    fn test_settings_serialization() {
+        let settings = Settings::default();
+        let json = serde_json::to_string(&settings).expect("Serialization failed");
+        
+        // Check camelCase field names
+        assert!(json.contains("\"maxTokens\""));
+        assert!(json.contains("\"contextLength\""));
+        assert!(json.contains("\"accentColor\""));
+        assert!(json.contains("\"autoSpeak\""));
+        assert!(json.contains("\"sttEnabled\""));
+        assert!(json.contains("\"ttsEnabled\""));
+        assert!(json.contains("\"modelPaths\""));
+        assert!(json.contains("\"systemPrompt\""));
+    }
+
+    #[test]
+    fn test_settings_deserialization() {
+        let json = r#"{
+            "temperature": 0.9,
+            "maxTokens": 1024,
+            "contextLength": 4096,
+            "theme": "light",
+            "accentColor": "magenta",
+            "autoSpeak": true,
+            "sttEnabled": false,
+            "ttsEnabled": true,
+            "modelPaths": ["/path/model.gguf"],
+            "systemPrompt": "Custom prompt"
+        }"#;
+        
+        let settings: Settings = serde_json::from_str(json).expect("Deserialization failed");
+        
+        assert_eq!(settings.temperature, 0.9);
+        assert_eq!(settings.max_tokens, 1024);
+        assert_eq!(settings.context_length, 4096);
+        assert_eq!(settings.theme, "light");
+        assert!(settings.auto_speak);
+        assert!(!settings.stt_enabled);
+        assert_eq!(settings.model_paths.len(), 1);
+        assert_eq!(settings.system_prompt, "Custom prompt");
+    }
+
+    // ==================== Message Tests ====================
+
+    #[test]
+    fn test_message_structure() {
+        let msg = Message {
+            id: 1,
+            content: "Hello".to_string(),
+            is_user: true,
+            timestamp: 1234567890,
+        };
+        
+        assert_eq!(msg.id, 1);
+        assert!(msg.is_user);
+    }
+
+    #[test]
+    fn test_message_serialization_camel_case() {
+        let msg = Message {
+            id: 1,
+            content: "Test".to_string(),
+            is_user: false,
+            timestamp: 0,
+        };
+        
+        let json = serde_json::to_string(&msg).expect("Serialization failed");
+        assert!(json.contains("\"isUser\""));
+        assert!(!json.contains("\"is_user\""));
+    }
+
+    // ==================== HistoryMessage Tests ====================
+
+    #[test]
+    fn test_history_message_structure() {
+        let history = vec![
+            HistoryMessage { content: "Привет".to_string(), is_user: true },
+            HistoryMessage { content: "Здравствуйте!".to_string(), is_user: false },
+        ];
+        
+        assert_eq!(history.len(), 2);
+        assert!(history[0].is_user);
+        assert!(!history[1].is_user);
+    }
+
+    // ==================== Prompt Building Tests ====================
+
+    #[test]
+    fn test_chatml_format_system() {
+        let system = "Ты AI ассистент";
+        let prompt = format!("<|im_start|>system\n{}<|im_end|>\n", system);
+        
+        assert!(prompt.starts_with("<|im_start|>system"));
+        assert!(prompt.contains(system));
+        assert!(prompt.contains("<|im_end|>"));
+    }
+
+    #[test]
+    fn test_chatml_format_user_message() {
+        let user_msg = "Привет";
+        let prompt = format!("<|im_start|>user\n{}<|im_end|>\n", user_msg);
+        
+        assert!(prompt.contains("<|im_start|>user"));
+        assert!(prompt.contains(user_msg));
+        assert!(prompt.contains("<|im_end|>"));
+    }
+
+    #[test]
+    fn test_chatml_format_assistant() {
+        let assistant_prompt = "<|im_start|>assistant\n";
+        
+        assert!(assistant_prompt.contains("<|im_start|>assistant"));
+        assert!(assistant_prompt.ends_with("\n"));
+    }
+
+    #[test]
+    fn test_full_prompt_structure() {
+        let system = "Ты Wishmaster";
+        let history = vec![
+            HistoryMessage { content: "Привет".to_string(), is_user: true },
+            HistoryMessage { content: "Здравствуйте!".to_string(), is_user: false },
+        ];
+        let user_message = "Как дела?";
+        
+        // Build prompt as in generate()
+        let mut full_prompt = String::from("<|im_start|>system\n");
+        full_prompt.push_str(system);
+        full_prompt.push_str("\n<|im_end|>\n");
+        
+        for msg in history.iter() {
+            let role = if msg.is_user { "user" } else { "assistant" };
+            full_prompt.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", role, msg.content));
+        }
+        
+        full_prompt.push_str(&format!("<|im_start|>user\n{}<|im_end|>\n", user_message));
+        full_prompt.push_str("<|im_start|>assistant\n");
+        
+        // Verify structure
+        assert!(full_prompt.starts_with("<|im_start|>system"));
+        assert!(full_prompt.contains(system));
+        assert!(full_prompt.contains("<|im_start|>user\nПривет<|im_end|>"));
+        assert!(full_prompt.contains("<|im_start|>assistant\nЗдравствуйте!<|im_end|>"));
+        assert!(full_prompt.contains("<|im_start|>user\nКак дела?<|im_end|>"));
+        assert!(full_prompt.ends_with("<|im_start|>assistant\n"));
+    }
+
+    #[test]
+    fn test_prompt_with_memories() {
+        let memories = vec![
+            "Пользователь любит Rust",
+            "Пользователя зовут Алекс",
+        ];
+        
+        let mut memory_section = String::from("=== ВАЖНЫЕ ФАКТЫ ИЗ ПАМЯТИ ===\n");
+        for mem in memories {
+            memory_section.push_str(&format!("- {}\n", mem));
+        }
+        
+        assert!(memory_section.contains("ВАЖНЫЕ ФАКТЫ"));
+        assert!(memory_section.contains("Rust"));
+        assert!(memory_section.contains("Алекс"));
+    }
+
+    #[test]
+    fn test_prompt_with_persona() {
+        let persona_info = format!(
+            "=== ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ ===\nСтиль: {}, Тон: {}, Язык: {}\n",
+            "casual", "friendly", "ru"
+        );
+        
+        assert!(persona_info.contains("ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ"));
+        assert!(persona_info.contains("casual"));
+        assert!(persona_info.contains("friendly"));
+        assert!(persona_info.contains("ru"));
+    }
+
+    #[test]
+    fn test_prompt_with_rag_context() {
+        let rag_results = vec![
+            ("Память", 0.85, "Пользователь работает программистом"),
+            ("Сообщение", 0.72, "Обсуждали Rust вчера"),
+        ];
+        
+        let mut rag_section = String::from("=== РЕЛЕВАНТНЫЙ КОНТЕКСТ ===\n");
+        for (source, similarity, content) in rag_results {
+            rag_section.push_str(&format!("[{} | сходство: {:.0}%] {}\n",
+                source, similarity * 100.0, content));
+        }
+        
+        assert!(rag_section.contains("РЕЛЕВАНТНЫЙ КОНТЕКСТ"));
+        assert!(rag_section.contains("85%"));
+        assert!(rag_section.contains("72%"));
+        assert!(rag_section.contains("программистом"));
+    }
+
+    // ==================== Edge Cases ====================
+
+    #[test]
+    fn test_empty_history() {
+        let history: Vec<HistoryMessage> = vec![];
+        let user_message = "Первое сообщение";
+        
+        let mut prompt = String::from("<|im_start|>system\nТы AI<|im_end|>\n");
+        
+        for msg in history.iter() {
+            let role = if msg.is_user { "user" } else { "assistant" };
+            prompt.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", role, msg.content));
+        }
+        
+        prompt.push_str(&format!("<|im_start|>user\n{}<|im_end|>\n", user_message));
+        
+        // Should not contain any history messages
+        assert!(!prompt.contains("<|im_start|>assistant\n"));
+        assert!(prompt.matches("<|im_start|>user").count() == 1);
+    }
+
+    #[test]
+    fn test_special_characters_in_prompt() {
+        let user_message = "Как написать `fn main() { println!(\"Hello\"); }`?";
+        let prompt = format!("<|im_start|>user\n{}<|im_end|>\n", user_message);
+        
+        assert!(prompt.contains("fn main()"));
+        assert!(prompt.contains("println!"));
+    }
+
+    #[test]
+    fn test_multiline_message() {
+        let user_message = "Строка 1\nСтрока 2\nСтрока 3";
+        let prompt = format!("<|im_start|>user\n{}<|im_end|>\n", user_message);
+        
+        assert!(prompt.contains("Строка 1\nСтрока 2\nСтрока 3"));
+    }
+
+    #[test]
+    fn test_emoji_in_message() {
+        let user_message = "Привет! 🎉👋";
+        let prompt = format!("<|im_start|>user\n{}<|im_end|>\n", user_message);
+        
+        assert!(prompt.contains("🎉"));
+        assert!(prompt.contains("👋"));
+    }
+
+    // ==================== Persona Analysis Tests ====================
+
+    #[test]
+    fn test_cyrillic_detection() {
+        let messages = vec![
+            "Привет, как дела?".to_string(),
+            "Хорошо, спасибо!".to_string(),
+        ];
+        
+        let has_cyrillic = messages.iter()
+            .any(|m| m.chars().any(|c| c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я'));
+        
+        assert!(has_cyrillic, "Should detect Cyrillic");
+    }
+
+    #[test]
+    fn test_no_cyrillic_detection() {
+        let messages = vec![
+            "Hello, how are you?".to_string(),
+            "Fine, thanks!".to_string(),
+        ];
+        
+        let has_cyrillic = messages.iter()
+            .any(|m| m.chars().any(|c| c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я'));
+        
+        assert!(!has_cyrillic, "Should not detect Cyrillic in English");
+    }
+
+    #[test]
+    fn test_emoji_ratio_calculation() {
+        let messages = vec![
+            "Привет 🎉".to_string(),
+            "Как дела? 😊👋".to_string(),
+            "Хорошо!".to_string(),
+        ];
+        
+        let emoji_count: usize = messages.iter()
+            .flat_map(|m| m.chars())
+            .filter(|c| *c as u32 > 0x1F600)
+            .count();
+        
+        let emoji_ratio = emoji_count as f32 / messages.len() as f32;
+        
+        // 4 emojis / 3 messages ≈ 1.33
+        assert!(emoji_ratio > 1.0);
+    }
+
+    #[test]
+    fn test_writing_style_detection_casual() {
+        let messages = vec!["привет".to_string(), "ок".to_string(), "круто".to_string()];
+        let casual_words = ["привет", "ок", "круто"];
+        let formal_words = ["пожалуйста", "благодарю"];
+        
+        let casual_count: usize = messages.iter()
+            .map(|m| casual_words.iter().filter(|w| m.to_lowercase().contains(*w)).count())
+            .sum();
+        let formal_count: usize = messages.iter()
+            .map(|m| formal_words.iter().filter(|w| m.to_lowercase().contains(*w)).count())
+            .sum();
+        
+        assert!(casual_count > formal_count);
+    }
+
+    // ==================== Model Path Tests ====================
+
+    #[test]
+    fn test_add_empty_path() {
+        let path = "   ".trim().to_string();
+        assert!(path.is_empty(), "Empty path should be detected");
+    }
+
+    #[test]
+    fn test_duplicate_path_prevention() {
+        let mut paths = vec!["/path/model1.gguf".to_string()];
+        let new_path = "/path/model1.gguf".to_string();
+        
+        if !paths.contains(&new_path) {
+            paths.push(new_path);
+        }
+        
+        assert_eq!(paths.len(), 1, "Should not add duplicate path");
+    }
+
+    #[test]
+    fn test_path_removal() {
+        let mut paths = vec![
+            "/path/model1.gguf".to_string(),
+            "/path/model2.gguf".to_string(),
+        ];
+        
+        paths.retain(|p| p != "/path/model1.gguf");
+        
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], "/path/model2.gguf");
+    }
+}

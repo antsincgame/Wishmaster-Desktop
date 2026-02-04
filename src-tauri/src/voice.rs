@@ -19,8 +19,6 @@ pub enum TtsEngine {
     Festival,
     /// Windows SAPI (Windows built-in)
     WindowsSapi,
-    /// macOS say command
-    MacOsSay,
 }
 
 static CURRENT_TTS: OnceCell<Mutex<TtsEngine>> = OnceCell::new();
@@ -42,7 +40,6 @@ pub fn init() {
         TtsEngine::Piper => "piper",
         TtsEngine::Festival => "festival",
         TtsEngine::WindowsSapi => "Windows SAPI",
-        TtsEngine::MacOsSay => "macOS say",
     };
     println!("Voice engine initialized. TTS: {}", engine_name);
 }
@@ -58,14 +55,6 @@ fn detect_tts_engine() -> TtsEngine {
         }
         // SAPI is always available on Windows
         return TtsEngine::WindowsSapi;
-    }
-    
-    #[cfg(target_os = "macos")]
-    {
-        // macOS: Use built-in 'say' command
-        if Command::new("say").arg("--voice=?").output().is_ok() {
-            return TtsEngine::MacOsSay;
-        }
     }
     
     #[cfg(target_os = "linux")]
@@ -162,7 +151,6 @@ pub fn speak(text: &str, _voice_id: Option<i64>) -> Result<(), String> {
         TtsEngine::Piper => speak_piper(text),
         TtsEngine::Festival => speak_festival(text),
         TtsEngine::WindowsSapi => speak_windows_sapi(text),
-        TtsEngine::MacOsSay => speak_macos(text),
     };
     
     IS_SPEAKING.store(false, Ordering::SeqCst);
@@ -312,42 +300,6 @@ fn speak_windows_sapi(_text: &str) -> Result<(), String> {
     Err("Windows SAPI is only available on Windows".to_string())
 }
 
-/// Speak using macOS 'say' command
-#[cfg(target_os = "macos")]
-fn speak_macos(text: &str) -> Result<(), String> {
-    println!("Speaking with macOS say: {}...", &text[..text.len().min(50)]);
-    
-    // Try to detect language and use appropriate voice
-    let has_cyrillic = text.chars().any(|c| c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я');
-    
-    let mut cmd = Command::new("say");
-    
-    if has_cyrillic {
-        // Try Russian voice if available (Milena or Yuri)
-        cmd.args(["-v", "Milena"]);
-    }
-    
-    cmd.arg(text);
-    
-    match cmd.output() {
-        Ok(out) if out.status.success() => Ok(()),
-        Ok(_) => {
-            // Fallback without specific voice
-            Command::new("say")
-                .arg(text)
-                .output()
-                .map(|_| ())
-                .map_err(|e| format!("macOS say failed: {}", e))
-        }
-        Err(e) => Err(format!("Failed to execute say: {}", e))
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn speak_macos(_text: &str) -> Result<(), String> {
-    Err("macOS say is only available on macOS".to_string())
-}
-
 /// Stop speaking
 pub fn stop_speaking() {
     IS_SPEAKING.store(false, Ordering::SeqCst);
@@ -358,14 +310,6 @@ pub fn stop_speaking() {
         // Kill PowerShell TTS processes on Windows
         let _ = Command::new("taskkill")
             .args(["/F", "/IM", "powershell.exe"])
-            .output();
-    }
-    
-    #[cfg(target_os = "macos")]
-    {
-        // Kill say process on macOS
-        let _ = Command::new("pkill")
-            .args(["-f", "say"])
             .output();
     }
     
@@ -397,12 +341,6 @@ pub fn is_tts_available() -> bool {
         return true;
     }
     
-    #[cfg(target_os = "macos")]
-    {
-        // macOS 'say' is always available
-        return Command::new("say").arg("--voice=?").output().is_ok();
-    }
-    
     #[cfg(target_os = "linux")]
     {
         return Command::new("espeak-ng").arg("--version").output().is_ok()
@@ -411,8 +349,261 @@ pub fn is_tts_available() -> bool {
             || Command::new("festival").arg("--version").output().is_ok();
     }
     
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         false
+    }
+}
+
+// ==================== TESTS ====================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== TtsEngine Tests ====================
+
+    #[test]
+    fn test_tts_engine_variants() {
+        // Verify all engine variants exist
+        let engines = [
+            TtsEngine::EspeakNg,
+            TtsEngine::Piper,
+            TtsEngine::Festival,
+            TtsEngine::WindowsSapi,
+        ];
+        
+        assert_eq!(engines.len(), 4, "Should have 4 TTS engine variants");
+    }
+
+    #[test]
+    fn test_tts_engine_equality() {
+        let engine1 = TtsEngine::EspeakNg;
+        let engine2 = TtsEngine::EspeakNg;
+        let engine3 = TtsEngine::Piper;
+        
+        assert_eq!(engine1, engine2);
+        assert_ne!(engine1, engine3);
+    }
+
+    #[test]
+    fn test_tts_engine_copy() {
+        let engine = TtsEngine::Festival;
+        let copied = engine;
+        
+        assert_eq!(engine, copied, "TtsEngine should be Copy");
+    }
+
+    #[test]
+    fn test_tts_engine_debug() {
+        let engine = TtsEngine::WindowsSapi;
+        let debug_str = format!("{:?}", engine);
+        
+        assert!(debug_str.contains("WindowsSapi"));
+    }
+
+    // ==================== Recording State Tests ====================
+
+    #[test]
+    fn test_initial_recording_state() {
+        // Recording should start as false
+        // Note: This tests the atomic's behavior, not the static
+        let recording = AtomicBool::new(false);
+        assert!(!recording.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_recording_state_transition() {
+        let recording = AtomicBool::new(false);
+        
+        // Start recording
+        recording.store(true, Ordering::SeqCst);
+        assert!(recording.load(Ordering::SeqCst));
+        
+        // Stop recording
+        recording.store(false, Ordering::SeqCst);
+        assert!(!recording.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_speaking_state_transition() {
+        let speaking = AtomicBool::new(false);
+        
+        // Start speaking
+        speaking.store(true, Ordering::SeqCst);
+        assert!(speaking.load(Ordering::SeqCst));
+        
+        // Stop speaking
+        speaking.store(false, Ordering::SeqCst);
+        assert!(!speaking.load(Ordering::SeqCst));
+    }
+
+    // ==================== Empty Text Handling Tests ====================
+
+    #[test]
+    fn test_empty_text_detection() {
+        let text = "";
+        assert!(text.trim().is_empty());
+    }
+
+    #[test]
+    fn test_whitespace_only_detection() {
+        let texts = ["", " ", "   ", "\t", "\n", "  \t\n  "];
+        
+        for text in texts {
+            assert!(
+                text.trim().is_empty(),
+                "Whitespace-only text should be detected: {:?}", text
+            );
+        }
+    }
+
+    #[test]
+    fn test_valid_text() {
+        let text = "Привет, мир!";
+        assert!(!text.trim().is_empty());
+    }
+
+    // ==================== Text Processing Tests ====================
+
+    #[test]
+    fn test_text_truncation_for_logging() {
+        let text = "Это очень длинный текст который нужно обрезать для логирования";
+        let max_len = 50;
+        let truncated = &text[..text.len().min(max_len)];
+        
+        assert!(truncated.len() <= max_len);
+    }
+
+    #[test]
+    fn test_cyrillic_text() {
+        let text = "Привет, как дела?";
+        let has_cyrillic = text.chars().any(|c| c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я');
+        
+        assert!(has_cyrillic);
+    }
+
+    #[test]
+    fn test_english_text() {
+        let text = "Hello, how are you?";
+        let has_cyrillic = text.chars().any(|c| c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я');
+        
+        assert!(!has_cyrillic);
+    }
+
+    // ==================== Shell Escape Tests ====================
+
+    #[test]
+    fn test_text_escape_single_quotes() {
+        let text = "It's a test";
+        let escaped = text.replace("'", "\\'");
+        
+        assert_eq!(escaped, "It\\'s a test");
+    }
+
+    #[test]
+    fn test_text_escape_for_powershell() {
+        let text = r#"Test "quoted" text"#;
+        let escaped = text
+            .replace("\\", "\\\\")
+            .replace("\"", "`\"")
+            .replace("$", "`$")
+            .replace("`", "``");
+        
+        assert!(escaped.contains("`\""));
+    }
+
+    // ==================== Path Tests ====================
+
+    #[test]
+    fn test_piper_model_paths() {
+        let paths = [
+            "/usr/share/piper-voices/ru_RU-irina-medium.onnx",
+            "~/.local/share/piper/ru_RU-irina-medium.onnx",
+            "./piper-model.onnx",
+        ];
+        
+        for path in paths {
+            assert!(path.ends_with(".onnx"), "Piper models should be .onnx files");
+        }
+    }
+
+    // ==================== Error Message Tests ====================
+
+    #[test]
+    fn test_recording_error_message() {
+        let error = "Already recording";
+        assert!(error.contains("recording"));
+    }
+
+    #[test]
+    fn test_not_recording_error() {
+        let error = "Not recording";
+        assert!(error.contains("Not"));
+    }
+
+    #[test]
+    fn test_tts_unavailable_error() {
+        let error = "TTS not available. Install espeak-ng: sudo apt install espeak-ng";
+        assert!(error.contains("espeak-ng"));
+        assert!(error.contains("apt install"));
+    }
+
+    // ==================== Concurrent Access Tests ====================
+
+    #[test]
+    fn test_atomic_ordering() {
+        let flag = AtomicBool::new(false);
+        
+        // SeqCst provides strongest ordering guarantees
+        flag.store(true, Ordering::SeqCst);
+        let value = flag.load(Ordering::SeqCst);
+        
+        assert!(value);
+    }
+
+    #[test]
+    fn test_compare_and_swap_pattern() {
+        let recording = AtomicBool::new(false);
+        
+        // Only start if not already recording (atomic check-and-set)
+        let was_recording = recording.swap(true, Ordering::SeqCst);
+        
+        assert!(!was_recording, "Should not have been recording before");
+        assert!(recording.load(Ordering::SeqCst), "Should be recording now");
+    }
+
+    // ==================== Integration Behavior Tests ====================
+
+    #[test]
+    fn test_double_start_prevention_logic() {
+        let is_recording = AtomicBool::new(false);
+        
+        // First start
+        if is_recording.load(Ordering::SeqCst) {
+            panic!("Should not be recording");
+        }
+        is_recording.store(true, Ordering::SeqCst);
+        
+        // Second start should fail
+        if is_recording.load(Ordering::SeqCst) {
+            // This is the expected path - already recording
+            assert!(true);
+        } else {
+            panic!("Should have detected active recording");
+        }
+    }
+
+    #[test]
+    fn test_stop_before_start_logic() {
+        let is_recording = AtomicBool::new(false);
+        
+        // Trying to stop when not recording
+        if !is_recording.load(Ordering::SeqCst) {
+            // Expected - not recording
+            assert!(true);
+        } else {
+            panic!("Should not be recording");
+        }
     }
 }

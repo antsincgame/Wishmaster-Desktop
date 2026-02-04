@@ -46,7 +46,7 @@ echo ""
 echo "=== Building Rust Backend (CUDA) ==="
 cd src-tauri
 
-BUILD_ARGS="build --features llm-cuda"
+BUILD_ARGS="build --features cuda"
 if [ "$RELEASE" = true ]; then
     BUILD_ARGS="$BUILD_ARGS --release"
 fi

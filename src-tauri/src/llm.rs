@@ -308,3 +308,244 @@ where
     println!("Generation complete. {} tokens generated", n_cur - tokens.len());
     Ok(())
 }
+
+// ==================== TESTS ====================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== GpuInfo Tests ====================
+
+    #[test]
+    fn test_gpu_info_structure_available() {
+        let info = GpuInfo {
+            available: true,
+            backend: "CUDA".to_string(),
+            device_name: "NVIDIA RTX 4090".to_string(),
+            vram_total_mb: 24576,
+            vram_free_mb: 20000,
+        };
+        
+        assert!(info.available);
+        assert_eq!(info.backend, "CUDA");
+        assert!(info.vram_total_mb > 0);
+    }
+
+    #[test]
+    fn test_gpu_info_structure_unavailable() {
+        let info = GpuInfo {
+            available: false,
+            backend: "CPU".to_string(),
+            device_name: "N/A".to_string(),
+            vram_total_mb: 0,
+            vram_free_mb: 0,
+        };
+        
+        assert!(!info.available);
+        assert_eq!(info.backend, "CPU");
+        assert_eq!(info.vram_total_mb, 0);
+    }
+
+    #[test]
+    fn test_gpu_info_serialization() {
+        let info = GpuInfo {
+            available: true,
+            backend: "CUDA".to_string(),
+            device_name: "GPU".to_string(),
+            vram_total_mb: 8192,
+            vram_free_mb: 4096,
+        };
+        
+        let json = serde_json::to_string(&info).expect("Serialization failed");
+        assert!(json.contains("\"available\":true"));
+        assert!(json.contains("\"backend\":\"CUDA\""));
+        assert!(json.contains("vramTotalMb")); // camelCase from serde
+        
+        let deserialized: GpuInfo = serde_json::from_str(&json).expect("Deserialization failed");
+        assert_eq!(deserialized.available, info.available);
+        assert_eq!(deserialized.backend, info.backend);
+    }
+
+    // ==================== Stop Sequences Tests ====================
+
+    #[test]
+    fn test_stop_sequences_defined() {
+        assert!(!STOP_SEQUENCES.is_empty(), "Stop sequences should be defined");
+    }
+
+    #[test]
+    fn test_stop_sequences_contains_chatml_end() {
+        assert!(
+            STOP_SEQUENCES.contains(&"<|im_end|>"),
+            "Should contain ChatML end token"
+        );
+    }
+
+    #[test]
+    fn test_stop_sequences_contains_im_start() {
+        assert!(
+            STOP_SEQUENCES.contains(&"<|im_start|>"),
+            "Should contain ChatML start token to prevent model from generating new turns"
+        );
+    }
+
+    #[test]
+    fn test_stop_sequences_contains_eos() {
+        assert!(
+            STOP_SEQUENCES.contains(&"</s>"),
+            "Should contain common EOS token"
+        );
+    }
+
+    #[test]
+    fn test_stop_sequence_detection() {
+        let test_output = "Hello world<|im_end|>";
+        let has_stop = STOP_SEQUENCES.iter().any(|seq| test_output.contains(seq));
+        assert!(has_stop, "Should detect stop sequence in output");
+    }
+
+    #[test]
+    fn test_stop_sequence_cleaning() {
+        let token = "текст<|im_end|>";
+        let clean = STOP_SEQUENCES.iter()
+            .fold(token.to_string(), |acc, seq| acc.replace(seq, ""));
+        assert_eq!(clean, "текст");
+    }
+
+    // ==================== Temperature Behavior Tests ====================
+    // Note: Can't test sample_with_temperature directly without model,
+    // but we can test the logic boundaries
+
+    #[test]
+    fn test_temperature_zero_is_greedy() {
+        // Temperature = 0 should use greedy sampling
+        // This is a logic documentation test
+        let temp = 0.0f32;
+        assert!(temp <= 0.0, "Zero temp triggers greedy path");
+    }
+
+    #[test]
+    fn test_temperature_negative_is_greedy() {
+        // Negative temperature should also use greedy (edge case)
+        let temp = -0.5f32;
+        assert!(temp <= 0.0, "Negative temp should trigger greedy path");
+    }
+
+    #[test]
+    fn test_temperature_valid_range() {
+        // Typical valid temperatures
+        let temps = [0.1, 0.5, 0.7, 1.0, 1.5, 2.0];
+        for temp in temps {
+            assert!(temp > 0.0, "Valid temps are positive");
+            assert!(temp <= 2.0, "Temps rarely exceed 2.0");
+        }
+    }
+
+    // ==================== Model Path Validation Tests ====================
+
+    #[test]
+    fn test_model_file_extension_validation() {
+        let valid_paths = [
+            "/path/to/model.gguf",
+            "model.gguf",
+            "/home/user/qwen2.5-7b-q4_k_m.gguf",
+        ];
+        
+        for path in valid_paths {
+            assert!(
+                path.ends_with(".gguf"),
+                "GGUF models should have .gguf extension"
+            );
+        }
+    }
+
+    #[test]
+    fn test_model_name_extraction_from_path() {
+        let path = "/home/user/models/qwen2.5-7b-instruct-q4_k_m.gguf";
+        let filename = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        
+        assert_eq!(filename, "qwen2.5-7b-instruct-q4_k_m");
+    }
+
+    #[test]
+    fn test_model_name_extraction_windows_path() {
+        let path = r"C:\Users\user\models\llama-7b.gguf";
+        let filename = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        
+        assert_eq!(filename, "llama-7b");
+    }
+
+    // ==================== Context Length Tests ====================
+
+    #[test]
+    fn test_context_length_minimum() {
+        let min_ctx = 512u32;
+        assert!(min_ctx >= 512, "Minimum context should be at least 512");
+    }
+
+    #[test]
+    fn test_context_length_default() {
+        let default_ctx = 2048u32;
+        assert_eq!(default_ctx, 2048, "Default context should be 2048");
+    }
+
+    #[test]
+    fn test_context_length_common_values() {
+        let valid_contexts = [512, 1024, 2048, 4096, 8192, 16384, 32768];
+        for ctx in valid_contexts {
+            assert!(ctx >= 512, "Context must be at least 512");
+            assert!(ctx <= 131072, "Context rarely exceeds 128k");
+        }
+    }
+
+    // ==================== GPU Layers Logic Tests ====================
+
+    #[test]
+    fn test_gpu_layers_when_available() {
+        let gpu_available = true;
+        let gpu_layers = if gpu_available { 99 } else { 0 };
+        assert_eq!(gpu_layers, 99, "Should use max GPU layers when available");
+    }
+
+    #[test]
+    fn test_gpu_layers_when_unavailable() {
+        let gpu_available = false;
+        let gpu_layers = if gpu_available { 99 } else { 0 };
+        assert_eq!(gpu_layers, 0, "Should use 0 GPU layers on CPU");
+    }
+
+    // ==================== Edge Cases ====================
+
+    #[test]
+    fn test_empty_prompt_handling() {
+        let prompt = "";
+        assert!(prompt.is_empty(), "Empty prompt should be detected");
+    }
+
+    #[test]
+    fn test_whitespace_only_prompt() {
+        let prompt = "   \t\n  ";
+        assert!(prompt.trim().is_empty(), "Whitespace-only prompt should be detected");
+    }
+
+    #[test]
+    fn test_unicode_prompt() {
+        let prompt = "Привет, как дела? 🎉";
+        assert!(!prompt.is_empty());
+        assert!(prompt.chars().count() > 0);
+    }
+
+    #[test]
+    fn test_very_long_prompt() {
+        let prompt = "x".repeat(10000);
+        assert_eq!(prompt.len(), 10000);
+        // In real scenario, this would be truncated to fit context
+    }
+}

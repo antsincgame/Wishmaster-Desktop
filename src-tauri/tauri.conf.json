@@ -30,10 +30,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["appimage", "deb", "rpm", "msi", "nsis"],
     "icon": [
       "icons/icon.png",
-      "icons/icon.icns",
       "icons/icon.ico"
     ],
     "resources": [
@@ -59,13 +58,6 @@
         "release": "1",
         "epoch": 0
       }
-    },
-    "macOS": {
-      "minimumSystemVersion": "10.15",
-      "signingIdentity": null,
-      "entitlements": null,
-      "frameworks": [],
-      "exceptionDomain": null
     },
     "windows": {
       "webviewInstallMode": {
