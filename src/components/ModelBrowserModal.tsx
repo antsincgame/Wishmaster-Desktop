@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { X, Download, Search, Loader2, ChevronRight, ExternalLink, AlertCircle, Check, HardDrive } from 'lucide-react'
+import { X, Download, Search, Loader2, ChevronRight, ExternalLink, AlertCircle, HardDrive } from 'lucide-react'
 import { useStore } from '../store'
 import { listen } from '@tauri-apps/api/event'
 import type { DownloadProgress, HfModelFile, PopularModel } from '../types'
@@ -108,11 +108,20 @@ export function ModelBrowserModal({ isOpen, onClose }: ModelBrowserModalProps) {
   }, {} as Record<string, PopularModel[]>)
 
   const categoryLabels: Record<string, string> = {
+    awq: '🚀 AWQ-GGUF (конвертированные)',
     multilingual: '🌍 Мультиязычные',
     code: '💻 Для кода',
     compact: '⚡ Компактные',
     general: '🎯 Универсальные',
   }
+
+  // Ensure AWQ category appears first
+  const categoryOrder = ['awq', 'multilingual', 'code', 'compact', 'general']
+  const sortedCategories = Object.entries(groupedByCategory).sort(([a], [b]) => {
+    const aIdx = categoryOrder.indexOf(a)
+    const bIdx = categoryOrder.indexOf(b)
+    return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx)
+  })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -278,7 +287,7 @@ export function ModelBrowserModal({ isOpen, onClose }: ModelBrowserModalProps) {
           {/* Popular models view */}
           {viewMode === 'popular' && (
             <div className="space-y-6">
-              {Object.entries(groupedByCategory).map(([category, models]) => (
+              {sortedCategories.map(([category, models]) => (
                 <div key={category}>
                   <h3 className="text-lg font-bold text-white mb-3">
                     {categoryLabels[category] || category}

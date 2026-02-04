@@ -236,7 +236,30 @@ pub fn get_progress(state: &DownloadState) -> (u64, u64, f32) {
 /// Get list of popular GGUF model repositories
 pub fn get_popular_models() -> Vec<PopularModel> {
     vec![
-        // Multilingual / Russian
+        // ==================== AWQ-GGUF (конвертированные из AWQ) ====================
+        PopularModel {
+            repo_id: "pomelk1n/RuadaptQwen2.5-32B-instruct-4-bit-AWQ-GGUF".to_string(),
+            name: "RuadaptQwen 32B AWQ".to_string(),
+            description: "🇷🇺 Адаптирован для русского, AWQ→GGUF 4bit".to_string(),
+            category: "awq".to_string(),
+            recommended_quant: "Q4_K_M".to_string(),
+        },
+        PopularModel {
+            repo_id: "straino/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit-Q4_K_M-GGUF".to_string(),
+            name: "Qwen3 Coder 30B AWQ".to_string(),
+            description: "💻 MoE кодер AWQ→GGUF, отличный для кода".to_string(),
+            category: "awq".to_string(),
+            recommended_quant: "Q4_K_M".to_string(),
+        },
+        PopularModel {
+            repo_id: "NexaAI/Octopus-v2-gguf-awq".to_string(),
+            name: "Octopus v2 AWQ".to_string(),
+            description: "📱 Компактная Gemma-2B AWQ для мобильных".to_string(),
+            category: "awq".to_string(),
+            recommended_quant: "Q4_K_M".to_string(),
+        },
+        
+        // ==================== Multilingual / Russian ====================
         PopularModel {
             repo_id: "Qwen/Qwen2.5-7B-Instruct-GGUF".to_string(),
             name: "Qwen 2.5 7B Instruct".to_string(),
@@ -259,11 +282,18 @@ pub fn get_popular_models() -> Vec<PopularModel> {
             recommended_quant: "Q4_K_M".to_string(),
         },
         
-        // Code
+        // ==================== Code ====================
         PopularModel {
             repo_id: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF".to_string(),
             name: "Qwen 2.5 Coder 7B".to_string(),
             description: "Специализированная для кода".to_string(),
+            category: "code".to_string(),
+            recommended_quant: "Q4_K_M".to_string(),
+        },
+        PopularModel {
+            repo_id: "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF".to_string(),
+            name: "Qwen 2.5 Coder 14B".to_string(),
+            description: "Мощный кодер, нужно 10+ GB VRAM".to_string(),
             category: "code".to_string(),
             recommended_quant: "Q4_K_M".to_string(),
         },
@@ -275,11 +305,18 @@ pub fn get_popular_models() -> Vec<PopularModel> {
             recommended_quant: "Q4_K_M".to_string(),
         },
         
-        // Compact / Fast
+        // ==================== Compact / Fast ====================
         PopularModel {
-            repo_id: "google/gemma-3-4b-it-GGUF".to_string(),
-            name: "Gemma 3 4B".to_string(),
-            description: "Быстрая от Google".to_string(),
+            repo_id: "Qwen/Qwen2.5-1.5B-Instruct-GGUF".to_string(),
+            name: "Qwen 2.5 1.5B Instruct".to_string(),
+            description: "Ультра-компактная, работает везде".to_string(),
+            category: "compact".to_string(),
+            recommended_quant: "Q4_K_M".to_string(),
+        },
+        PopularModel {
+            repo_id: "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF".to_string(),
+            name: "Qwen 2.5 Coder 1.5B".to_string(),
+            description: "Мини-кодер, быстрый и лёгкий".to_string(),
             category: "compact".to_string(),
             recommended_quant: "Q4_K_M".to_string(),
         },
@@ -291,7 +328,7 @@ pub fn get_popular_models() -> Vec<PopularModel> {
             recommended_quant: "Q4_K_M".to_string(),
         },
         
-        // Long context
+        // ==================== General / Long context ====================
         PopularModel {
             repo_id: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF".to_string(),
             name: "Llama 3.1 8B Instruct".to_string(),
@@ -303,6 +340,13 @@ pub fn get_popular_models() -> Vec<PopularModel> {
             repo_id: "bartowski/Mistral-Nemo-Instruct-2407-GGUF".to_string(),
             name: "Mistral Nemo 12B".to_string(),
             description: "Отличный баланс качества и скорости".to_string(),
+            category: "general".to_string(),
+            recommended_quant: "Q4_K_M".to_string(),
+        },
+        PopularModel {
+            repo_id: "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF".to_string(),
+            name: "Qwen3 4B Instruct".to_string(),
+            description: "Новейшая Qwen3, отличное качество".to_string(),
             category: "general".to_string(),
             recommended_quant: "Q4_K_M".to_string(),
         },
