@@ -26,9 +26,8 @@ jobs:
       id: cuda-toolkit
       with:
         cuda: '12.4.0'
-        method: 'network'
-        # CUDA for llama.cpp compilation (nvml-wrapper uses runtime loading, no build deps needed)
-        sub-packages: '["nvcc", "cudart", "cudart_dev", "cublas", "cublas_dev"]'
+        method: 'local'
+        # Full toolkit for reliable llama.cpp CUDA compilation
 
     - name: Show CUDA info
       run: |
