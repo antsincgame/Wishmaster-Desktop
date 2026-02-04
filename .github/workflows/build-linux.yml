@@ -153,30 +153,68 @@ jobs:
     - name: Build frontend
       run: npm run build
 
-    - name: Download compatible linuxdeploy
-      run: |
-        # Download older linuxdeploy binaries that work with glibc 2.35
-        mkdir -p ~/.cache/tauri
-        # Use linuxdeploy from 2022 which is compatible with Ubuntu 22.04
-        wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20220822-1/linuxdeploy-x86_64.AppImage" \
-          -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage
-        chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
-        # Download plugin-appimage
-        wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20230713-1/linuxdeploy-plugin-appimage-x86_64.AppImage" \
-          -O ~/.cache/tauri/linuxdeploy-plugin-appimage-x86_64.AppImage
-        chmod +x ~/.cache/tauri/linuxdeploy-plugin-appimage-x86_64.AppImage
-        ls -la ~/.cache/tauri/
-
-    - name: Build Tauri AppImage
+    - name: Build Rust binary
       run: |
         export PATH="$HOME/.cargo/bin:$PATH"
         # Build without embeddings feature for glibc 2.35 compatibility
         cd src-tauri && cargo build --release --no-default-features --features custom-protocol
-        cd .. && npx tauri build --bundles appimage -- --no-default-features --features custom-protocol
-      env:
-        TAURI_SIGNING_PRIVATE_KEY: ""
-        # Use pre-downloaded linuxdeploy
-        LINUXDEPLOY: ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+
+    - name: Create AppImage manually
+      run: |
+        # Create AppImage structure manually to avoid linuxdeploy glibc issues
+        APP_NAME="Wishmaster Desktop"
+        APP_DIR="AppDir"
+        
+        # Create AppDir structure
+        mkdir -p "$APP_DIR/usr/bin"
+        mkdir -p "$APP_DIR/usr/share/applications"
+        mkdir -p "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
+        
+        # Copy binary
+        cp src-tauri/target/release/wishmaster-desktop "$APP_DIR/usr/bin/"
+        
+        # Create desktop file
+        cat > "$APP_DIR/usr/share/applications/wishmaster-desktop.desktop" << 'DESKTOP'
+        [Desktop Entry]
+        Name=Wishmaster Desktop
+        Exec=wishmaster-desktop
+        Icon=wishmaster-desktop
+        Type=Application
+        Categories=Utility;
+        Comment=Local AI Assistant with Voice Cloning
+        DESKTOP
+        
+        # Copy icon
+        cp src-tauri/icons/icon.png "$APP_DIR/usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png"
+        
+        # Create AppRun
+        cat > "$APP_DIR/AppRun" << 'APPRUN'
+        #!/bin/bash
+        HERE="$(dirname "$(readlink -f "${0}")")"
+        export PATH="${HERE}/usr/bin:${PATH}"
+        export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+        exec "${HERE}/usr/bin/wishmaster-desktop" "$@"
+        APPRUN
+        chmod +x "$APP_DIR/AppRun"
+        
+        # Create symlinks for AppImage
+        ln -sf usr/share/applications/wishmaster-desktop.desktop "$APP_DIR/wishmaster-desktop.desktop"
+        ln -sf usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png "$APP_DIR/wishmaster-desktop.png"
+        ln -sf usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png "$APP_DIR/.DirIcon"
+        
+        # Download appimagetool (static binary, no glibc issues)
+        wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+        chmod +x appimagetool
+        
+        # Extract appimagetool (avoid FUSE issues in container)
+        ./appimagetool --appimage-extract
+        
+        # Create AppImage
+        mkdir -p src-tauri/target/release/bundle/appimage
+        ARCH=x86_64 ./squashfs-root/AppRun "$APP_DIR" "src-tauri/target/release/bundle/appimage/Wishmaster_Desktop_1.0.0_amd64.AppImage"
+        
+        echo "=== AppImage created ==="
+        ls -la src-tauri/target/release/bundle/appimage/
 
     - name: List AppImage output
       run: |
