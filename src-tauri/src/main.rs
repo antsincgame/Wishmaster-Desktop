@@ -6,6 +6,7 @@ mod database;
 #[cfg(feature = "embeddings")]
 mod embeddings;
 mod errors;
+mod hf_models;
 mod llm;
 mod voice;
 
@@ -120,6 +121,11 @@ fn main() {
             commands::get_voice_recordings,
             commands::save_voice_from_chat,
             commands::create_voice_profile_from_recording,
+            // HuggingFace Hub
+            commands::list_hf_gguf_files,
+            commands::get_popular_models,
+            commands::download_hf_model,
+            commands::get_models_dir,
         ])
         .run(tauri::generate_context!());
     

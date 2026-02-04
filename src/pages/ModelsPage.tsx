@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Box, Check, Loader2, Plus, Trash2, FolderOpen, FileSearch } from 'lucide-react'
+import { Box, Check, Loader2, Plus, Trash2, FolderOpen, FileSearch, Download, Cloud } from 'lucide-react'
 import { useStore } from '../store'
 import { open } from '@tauri-apps/plugin-dialog'
+import { ModelBrowserModal } from '../components/ModelBrowserModal'
 import clsx from 'clsx'
 
 export function ModelsPage() {
@@ -19,6 +20,7 @@ export function ModelsPage() {
   const [loadingModel, setLoadingModel] = useState<string | null>(null)
   const [newPath, setNewPath] = useState('')
   const [pathError, setPathError] = useState<string | null>(null)
+  const [showBrowser, setShowBrowser] = useState(false)
 
   useEffect(() => {
     loadModels()
@@ -88,11 +90,29 @@ export function ModelsPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Download from HuggingFace */}
+        <section className="p-4 rounded-xl border border-neon-magenta/30 bg-neon-magenta/5">
+          <h3 className="text-sm font-bold text-neon-magenta mb-3 flex items-center gap-2">
+            <Cloud size={18} />
+            Скачать с HuggingFace
+          </h3>
+          <button
+            onClick={() => setShowBrowser(true)}
+            className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl bg-neon-magenta/10 border-2 border-dashed border-neon-magenta/50 text-neon-magenta hover:bg-neon-magenta/20 hover:border-neon-magenta transition-all"
+          >
+            <Download size={24} />
+            <span className="text-lg font-bold">Обзор моделей...</span>
+          </button>
+          <p className="text-xs text-gray-500 mt-2 text-center">
+            Qwen, Llama, Mistral, DeepSeek и другие GGUF модели
+          </p>
+        </section>
+
         {/* Add model - File picker */}
         <section className="p-4 rounded-xl border border-neon-cyan/30 bg-neon-cyan/5">
           <h3 className="text-sm font-bold text-neon-cyan mb-3 flex items-center gap-2">
             <FolderOpen size={18} />
-            Добавить модель
+            Добавить локальную модель
           </h3>
           
           {/* Browse button */}
@@ -217,31 +237,24 @@ export function ModelsPage() {
           </div>
         )}
 
-        {/* Recommended models */}
+        {/* Tip */}
         <div className="mt-8 p-4 rounded-xl border border-cyber-border bg-cyber-surface/50">
-          <h4 className="text-sm font-bold text-neon-yellow mb-3">
-            💡 Рекомендуемые модели
+          <h4 className="text-sm font-bold text-neon-yellow mb-2">
+            💡 Совет
           </h4>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="p-3 rounded-lg bg-cyber-dark">
-              <p className="font-bold text-neon-cyan">Qwen2.5 7B Q4_K_M</p>
-              <p className="text-gray-500">Лучший русский • ~5 GB</p>
-            </div>
-            <div className="p-3 rounded-lg bg-cyber-dark">
-              <p className="font-bold text-neon-magenta">DeepSeek 7B Q4_K_M</p>
-              <p className="text-gray-500">Лучший для кода • ~3.5 GB</p>
-            </div>
-            <div className="p-3 rounded-lg bg-cyber-dark">
-              <p className="font-bold text-neon-green">Gemma 3n</p>
-              <p className="text-gray-500">Компактная • ~2 GB</p>
-            </div>
-            <div className="p-3 rounded-lg bg-cyber-dark">
-              <p className="font-bold text-neon-purple">Llama 3.1 8B Q4_K_M</p>
-              <p className="text-gray-500">Длинный контекст • ~6 GB</p>
-            </div>
-          </div>
+          <p className="text-sm text-gray-400">
+            Для русского языка рекомендуем <span className="text-neon-cyan font-bold">Qwen 2.5</span>.
+            Для кода — <span className="text-neon-magenta font-bold">Qwen Coder</span> или <span className="text-neon-magenta font-bold">DeepSeek Coder</span>.
+            Квантизация <span className="text-neon-green font-bold">Q4_K_M</span> — лучший баланс качества и размера.
+          </p>
         </div>
       </div>
+
+      {/* HuggingFace Browser Modal */}
+      <ModelBrowserModal
+        isOpen={showBrowser}
+        onClose={() => setShowBrowser(false)}
+      />
     </div>
   )
 }

@@ -22,6 +22,8 @@ import type {
   HistoryMessage,
   SearchResult,
   EmbeddingStats,
+  HfModelFile,
+  PopularModel,
 } from '../types';
 
 // ==================== ERROR HANDLING ====================
@@ -368,6 +370,35 @@ export const searchApi = {
     }),
 };
 
+// ==================== HUGGINGFACE HUB API ====================
+
+export const hfApi = {
+  /**
+   * List GGUF files in a HuggingFace repository
+   */
+  listGgufFiles: (repoId: string) =>
+    safeInvoke<HfModelFile[]>('list_hf_gguf_files', { repoId }, []),
+
+  /**
+   * Get list of popular/recommended GGUF model repositories
+   */
+  getPopularModels: () =>
+    safeInvoke<PopularModel[]>('get_popular_models', undefined, []),
+
+  /**
+   * Download a model from HuggingFace Hub
+   * Returns the local path to the downloaded file
+   */
+  downloadModel: (repoId: string, filename: string) =>
+    safeInvoke<string>('download_hf_model', { repoId, filename }),
+
+  /**
+   * Get the models directory path
+   */
+  getModelsDir: () =>
+    safeInvoke<string>('get_models_dir'),
+};
+
 // ==================== COMBINED EXPORT ====================
 
 export const api = {
@@ -381,6 +412,7 @@ export const api = {
   export: exportApi,
   voice: voiceApi,
   search: searchApi,
+  hf: hfApi,
 };
 
 export default api;

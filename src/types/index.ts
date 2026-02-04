@@ -293,6 +293,60 @@ export interface ExportData {
   exportedAt: number;
 }
 
+// ==================== HUGGINGFACE HUB TYPES ====================
+
+/**
+ * GGUF model file from HuggingFace Hub
+ */
+export interface HfModelFile {
+  /** Filename (e.g., "model-q4_k_m.gguf") */
+  filename: string;
+  /** File size in bytes */
+  size: number;
+  /** Size formatted as string (e.g., "4.5 GB") */
+  sizeFormatted: string;
+  /** Quantization type extracted from filename (e.g., "Q4_K_M") */
+  quantType: string | null;
+}
+
+/**
+ * Popular model repository information
+ */
+export interface PopularModel {
+  /** Repository ID (e.g., "Qwen/Qwen2.5-7B-Instruct-GGUF") */
+  repoId: string;
+  /** Display name */
+  name: string;
+  /** Short description */
+  description: string;
+  /** Category (e.g., "multilingual", "code", "compact") */
+  category: string;
+  /** Recommended quantization */
+  recommendedQuant: string;
+}
+
+/**
+ * Download progress information
+ */
+export interface DownloadProgress {
+  /** Repository ID */
+  repoId: string;
+  /** Filename being downloaded */
+  filename: string;
+  /** Downloaded bytes */
+  downloaded: number;
+  /** Total file size */
+  total: number;
+  /** Progress percentage (0-100) */
+  percent: number;
+  /** Download speed in bytes/sec */
+  speed: number;
+  /** Is download complete */
+  complete: boolean;
+  /** Error message if failed */
+  error: string | null;
+}
+
 // ==================== API RESPONSE TYPES ====================
 
 /**

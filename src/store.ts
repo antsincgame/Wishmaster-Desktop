@@ -14,6 +14,9 @@ import type {
   SearchResult,
   EmbeddingStats,
   Settings,
+  HfModelFile,
+  PopularModel,
+  DownloadProgress,
 } from './types'
 
 // Re-export types for components that import from store
@@ -31,6 +34,9 @@ export type {
   SearchResult,
   EmbeddingStats,
   Settings,
+  HfModelFile,
+  PopularModel,
+  DownloadProgress,
 }
 
 // ==================== STORE ====================
@@ -121,6 +127,17 @@ interface AppState {
   stopRecording: () => Promise<string>
   speak: (text: string, voiceId?: number) => Promise<void>
   stopSpeaking: () => Promise<void>
+  
+  // HuggingFace Hub
+  hfFiles: HfModelFile[]
+  hfPopularModels: PopularModel[]
+  hfDownloadProgress: DownloadProgress | null
+  isDownloading: boolean
+  hfError: string | null
+  listHfFiles: (repoId: string) => Promise<HfModelFile[]>
+  loadPopularModels: () => Promise<void>
+  downloadHfModel: (repoId: string, filename: string) => Promise<string>
+  setDownloadProgress: (progress: DownloadProgress | null) => void
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -642,5 +659,56 @@ export const useStore = create<AppState>((set, get) => ({
     } finally {
       set({ isSpeaking: false })
     }
+  },
+
+  // ==================== HuggingFace Hub ====================
+  
+  hfFiles: [],
+  hfPopularModels: [],
+  hfDownloadProgress: null,
+  isDownloading: false,
+  hfError: null,
+
+  listHfFiles: async (repoId) => {
+    set({ hfError: null, hfFiles: [] })
+    try {
+      const files = await invoke<HfModelFile[]>('list_hf_gguf_files', { repoId })
+      set({ hfFiles: files })
+      return files
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e)
+      set({ hfError: error })
+      console.error('Failed to list HF files:', e)
+      return []
+    }
+  },
+
+  loadPopularModels: async () => {
+    try {
+      const models = await invoke<PopularModel[]>('get_popular_models')
+      set({ hfPopularModels: models })
+    } catch (e) {
+      console.error('Failed to load popular models:', e)
+    }
+  },
+
+  downloadHfModel: async (repoId, filename) => {
+    set({ isDownloading: true, hfError: null })
+    try {
+      const path = await invoke<string>('download_hf_model', { repoId, filename })
+      set({ isDownloading: false, hfDownloadProgress: null })
+      // Reload models to show the new one
+      await get().loadModels()
+      return path
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e)
+      set({ isDownloading: false, hfError: error, hfDownloadProgress: null })
+      console.error('Failed to download model:', e)
+      throw e
+    }
+  },
+
+  setDownloadProgress: (progress) => {
+    set({ hfDownloadProgress: progress })
   },
 }))

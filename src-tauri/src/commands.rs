@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::database;
 #[cfg(feature = "embeddings")]
 use crate::embeddings;
+use crate::hf_models;
 use crate::llm;
 use crate::voice;
 
@@ -761,6 +762,127 @@ pub fn get_embedding_stats() -> Result<serde_json::Value, String> {
         "status": "disabled",
         "message": "Semantic search is disabled in this build"
     }))
+}
+
+// ==================== HuggingFace Hub Commands ====================
+
+/// Get list of GGUF files in a HuggingFace repository
+#[tauri::command]
+pub async fn list_hf_gguf_files(repo_id: String) -> Result<Vec<hf_models::HfModelFile>, String> {
+    tauri::async_runtime::spawn_blocking(move || hf_models::list_gguf_files(&repo_id))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Get list of popular/recommended GGUF model repositories
+#[tauri::command]
+pub fn get_popular_models() -> Vec<hf_models::PopularModel> {
+    hf_models::get_popular_models()
+}
+
+/// Download a model from HuggingFace Hub
+/// Returns the local path to the downloaded file
+#[tauri::command]
+pub async fn download_hf_model(
+    app: AppHandle,
+    repo_id: String,
+    filename: String,
+) -> Result<String, String> {
+    use std::sync::Arc;
+    
+    let state = Arc::new(hf_models::DownloadState::new());
+    let state_clone = state.clone();
+    let repo_id_clone = repo_id.clone();
+    let filename_clone = filename.clone();
+    
+    // Spawn progress emitter task
+    let app_clone = app.clone();
+    let state_for_progress = state.clone();
+    let repo_for_progress = repo_id.clone();
+    let file_for_progress = filename.clone();
+    
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            
+            let (downloaded, total, percent) = hf_models::get_progress(&state_for_progress);
+            
+            let progress = hf_models::DownloadProgress {
+                repo_id: repo_for_progress.clone(),
+                filename: file_for_progress.clone(),
+                downloaded,
+                total,
+                percent,
+                speed: 0, // Could calculate from delta
+                complete: false,
+                error: None,
+            };
+            
+            if app_clone.emit("hf-download-progress", &progress).is_err() {
+                break;
+            }
+            
+            // Stop if download seems complete
+            if total > 0 && downloaded >= total {
+                break;
+            }
+        }
+    });
+    
+    // Download in blocking task
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        hf_models::download_model(&repo_id_clone, &filename_clone, state_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?;
+    
+    match result {
+        Ok(path) => {
+            // Emit completion
+            let progress = hf_models::DownloadProgress {
+                repo_id: repo_id.clone(),
+                filename: filename.clone(),
+                downloaded: 0,
+                total: 0,
+                percent: 100.0,
+                speed: 0,
+                complete: true,
+                error: None,
+            };
+            let _ = app.emit("hf-download-progress", &progress);
+            
+            // Auto-add to model paths
+            let path_str = path.to_string_lossy().to_string();
+            if let Err(e) = add_model_path(path_str.clone()) {
+                eprintln!("Warning: failed to add model path: {}", e);
+            }
+            
+            Ok(path_str)
+        }
+        Err(e) => {
+            // Emit error
+            let progress = hf_models::DownloadProgress {
+                repo_id,
+                filename,
+                downloaded: 0,
+                total: 0,
+                percent: 0.0,
+                speed: 0,
+                complete: false,
+                error: Some(e.clone()),
+            };
+            let _ = app.emit("hf-download-progress", &progress);
+            
+            Err(e)
+        }
+    }
+}
+
+/// Get the models directory path
+#[tauri::command]
+pub fn get_models_dir() -> Result<String, String> {
+    hf_models::get_models_dir()
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 // ==================== TESTS ====================

@@ -26,6 +26,9 @@ shellexpand = "3"  # Shell path expansion (~, $VAR)
 # LLM - native llama.cpp bindings (CPU by default, CUDA optional)
 llama-cpp-2 = "0.1"
 
+# HuggingFace Hub for model downloads
+hf-hub = { version = "0.4", default-features = false, features = ["ureq", "rustls-tls"] }
+
 # Embeddings for semantic search / RAG (optional - requires glibc 2.38+)
 # Using latest fastembed with native TLS for ort downloads
 fastembed = { version = "5", default-features = false, features = ["ort-download-binaries", "hf-hub-native-tls"], optional = true }
