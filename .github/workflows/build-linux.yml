@@ -128,7 +128,9 @@ jobs:
           pkg-config \
           libfuse2 \
           patchelf \
-          ca-certificates
+          ca-certificates \
+          libclang-dev \
+          clang
 
     - name: Install Rust
       run: |
