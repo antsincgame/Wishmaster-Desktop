@@ -51,7 +51,7 @@ embeddings = ["dep:fastembed"]
 # Local build without CUDA: cargo build --no-default-features --features "custom-protocol,embeddings"
 cuda = ["llama-cpp-2/cuda", "nvml-wrapper"]
 
-# Optional: real GPU name and VRAM via NVIDIA Management Library (when cuda is enabled)
+# NVML for real GPU name and VRAM (compiles everywhere, runtime-only loading via libloading)
 nvml-wrapper = { version = "0.11", optional = true }
 
 [dev-dependencies]

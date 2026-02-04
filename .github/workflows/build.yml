@@ -26,7 +26,8 @@ jobs:
       with:
         cuda: '12.4.0'
         method: 'network'
-        sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev"]'
+        # Full CUDA for llama.cpp compilation + NVML for GPU info
+        sub-packages: '["nvcc", "cudart", "cudart_dev", "cublas", "cublas_dev", "nvml", "nvml_dev"]'
 
     - name: Show CUDA info
       run: |
@@ -71,18 +72,13 @@ jobs:
     - name: Build frontend
       run: npm run build
 
-    - name: Rust syntax check
+    - name: Rust syntax check (with CUDA)
       working-directory: src-tauri
-      run: cargo check --features "custom-protocol"
-
-    - name: Build Rust (CPU only for now)
-      working-directory: src-tauri
-      run: |
-        cargo build --release --features "custom-protocol"
+      run: cargo check
       env:
         CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
 
-    - name: Build Tauri bundle
+    - name: Build Tauri bundle (with CUDA)
       run: npm run tauri:build
       env:
         CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
