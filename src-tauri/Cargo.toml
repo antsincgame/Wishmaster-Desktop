@@ -26,8 +26,10 @@ thiserror = "1.0"  # Custom error types
 llama-cpp-2 = "0.1"
 
 # Embeddings for semantic search / RAG
-# Pin to 3.x for stable InitOptions API
+# Note: ort-sys requires TLS feature for downloading binaries
 fastembed = "3"
+# Add ort with TLS feature to satisfy ort-sys requirements
+ort = { version = "2.0.0-rc.4", features = ["download-binaries", "tls-native"] }
 
 # Audio - placeholder (add cpal + hound later for voice features)
 # cpal = "0.15"
