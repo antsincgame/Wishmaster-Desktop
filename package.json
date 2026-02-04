@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "validate": "node scripts/validate-build.cjs",
     "validate:full": "node scripts/validate-build.cjs --full",
+    "check:tauri-versions": "node scripts/check-tauri-versions.cjs",
     "typecheck": "tsc --noEmit",
     "lint:types": "tsc --noEmit"
   },

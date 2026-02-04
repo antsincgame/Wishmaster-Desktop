@@ -210,15 +210,31 @@ fn speak_piper(text: &str) -> Result<(), String> {
     println!("Speaking with piper: {}...", &text[..text.len().min(50)]);
     
     // Piper requires a model file, check common locations
-    let model_paths = [
-        "/usr/share/piper-voices/ru_RU-irina-medium.onnx",
-        "~/.local/share/piper/ru_RU-irina-medium.onnx",
-        "./piper-model.onnx",
-    ];
+    // Users can also set PIPER_MODEL_PATH environment variable
+    let mut model_paths = vec![];
+    
+    // Check environment variable first
+    if let Ok(env_path) = std::env::var("PIPER_MODEL_PATH") {
+        model_paths.push(env_path);
+    }
+    
+    // Then check standard system locations
+    model_paths.extend([
+        "/usr/share/piper-voices/ru_RU-irina-medium.onnx".to_string(),
+        "~/.local/share/piper/ru_RU-irina-medium.onnx".to_string(),
+        "./piper-model.onnx".to_string(),
+    ]);
     
     let model = model_paths.iter()
-        .find(|p| std::path::Path::new(p).exists())
-        .map(|s| s.to_string());
+        .find(|p| {
+            // Expand ~ to home directory
+            let expanded = shellexpand::tilde(p);
+            std::path::Path::new(expanded.as_ref()).exists()
+        })
+        .map(|s| {
+            let expanded = shellexpand::tilde(s);
+            expanded.to_string()
+        });
     
     if let Some(model_path) = model {
         // echo "text" | piper --model model.onnx --output_file - | aplay
@@ -238,7 +254,7 @@ fn speak_piper(text: &str) -> Result<(), String> {
             }
         }
     } else {
-        println!("Piper model not found, falling back to espeak-ng");
+        println!("Piper model not found (check PIPER_MODEL_PATH env var), falling back to espeak-ng");
         speak_espeak(text)
     }
 }

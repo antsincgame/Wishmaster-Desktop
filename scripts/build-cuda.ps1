@@ -13,7 +13,27 @@ Write-Host "=== Wishmaster Desktop Build (CUDA) ===" -ForegroundColor Cyan
 
 # Check CUDA
 if (-not $CudaPath) {
-    $CudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+    # Try to find CUDA automatically
+    $cudaBasePath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA"
+    if (Test-Path $cudaBasePath) {
+        # Find latest CUDA version
+        $latestCuda = Get-ChildItem $cudaBasePath -Directory | 
+            Where-Object { $_.Name -match '^v\d+\.\d+$' } |
+            Sort-Object Name -Descending |
+            Select-Object -First 1
+        
+        if ($latestCuda) {
+            $CudaPath = $latestCuda.FullName
+            Write-Host "Auto-detected CUDA: $CudaPath" -ForegroundColor Yellow
+        }
+    }
+}
+
+if (-not $CudaPath) {
+    Write-Host "CUDA not found!" -ForegroundColor Red
+    Write-Host "Please install CUDA Toolkit or set CUDA_PATH environment variable" -ForegroundColor Yellow
+    Write-Host "Download from: https://developer.nvidia.com/cuda-downloads" -ForegroundColor Cyan
+    exit 1
 }
 
 if (-not (Test-Path $CudaPath)) {

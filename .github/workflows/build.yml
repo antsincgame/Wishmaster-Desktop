@@ -57,6 +57,9 @@ jobs:
       run: npm ci
 
     # ==================== VALIDATION STAGE ====================
+    - name: Check Tauri versions sync
+      run: npm run check:tauri-versions
+
     - name: Validate configuration
       run: npm run validate
 
