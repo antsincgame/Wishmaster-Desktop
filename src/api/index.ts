@@ -329,6 +329,17 @@ export const voiceApi = {
    * Stop speaking
    */
   stopSpeaking: () => safeInvoke<void>('stop_speaking'),
+
+  /**
+   * Check if STT (whisper.cpp) is available locally
+   */
+  isSttAvailable: () => safeInvoke<boolean>('is_stt_available', undefined, false),
+
+  /**
+   * Transcribe audio file using whisper.cpp
+   */
+  transcribeAudio: (audioPath: string) =>
+    safeInvoke<string>('transcribe_audio', { audioPath }),
 };
 
 // ==================== SEMANTIC SEARCH API ====================

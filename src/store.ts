@@ -147,7 +147,7 @@ export const useStore = create<AppState>((set, get) => ({
     sttEnabled: true,
     ttsEnabled: true,
     modelPaths: [] as string[],
-    systemPrompt: 'Ты - Wishmaster, умный AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке.',
+    systemPrompt: 'Ты — Wishmaster, умный диалоговый AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке. Отвечай только содержательным текстом, без процентов, формул сходства и служебных меток.',
   },
   // Memory system state
   memories: [],

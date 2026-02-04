@@ -36,7 +36,22 @@ pub struct Settings {
 }
 
 fn default_system_prompt() -> String {
-    "Ты - Wishmaster, умный AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке.".to_string()
+    "Ты — Wishmaster, умный диалоговый AI-ассистент с долговременной памятью. \
+     Отвечай кратко и по делу на русском языке. \
+     Отвечай только содержательным текстом, без процентов, формул сходства и служебных меток.".to_string()
+}
+
+/// Detects if the stored system prompt is the "similarity comparison" task that causes
+/// the model to output "сходство 100%" instead of a real reply. Replaces with safe default.
+fn is_similarity_comparison_prompt(s: &str) -> bool {
+    let t = s.trim();
+    if t.is_empty() {
+        return false;
+    }
+    let lower = t.to_lowercase();
+    t.contains("сходство") && (t.contains("сравни") || t.contains("процент") || t.contains('%'))
+        || t.contains("сравни два сообщения")
+        || (lower.contains("similarity") && (lower.contains("compare") || t.contains('%')))
 }
 
 impl Default for Settings {
@@ -439,13 +454,19 @@ pub async fn generate(
 ) -> Result<(), String> {
     STOP_GENERATION.store(false, Ordering::SeqCst);
     
-    // Get user's custom system prompt
+    // Get user's custom system prompt (replace known-bad "similarity comparison" prompt with safe default)
     let settings = database::get_settings().unwrap_or_default();
-    
+    let system_prompt = if is_similarity_comparison_prompt(&settings.system_prompt) {
+        default_system_prompt()
+    } else {
+        settings.system_prompt.clone()
+    };
+
     // Build prompt with ChatML format including MEMORY
     let mut full_prompt = String::from("<|im_start|>system\n");
-    full_prompt.push_str(&settings.system_prompt);
-    full_prompt.push_str("\nТы помнишь ВСЕ предыдущие разговоры и используешь эту информацию.\n\n");
+    full_prompt.push_str(&system_prompt);
+    full_prompt.push_str("\nТы помнишь ВСЕ предыдущие разговоры и используешь эту информацию.");
+    full_prompt.push_str(" Отвечай только текстом ответа пользователю — без процентов, сходства и метаданных.\n\n");
     
     // Add important memories
     if let Ok(memories) = database::get_top_memories(5) {
@@ -470,16 +491,15 @@ pub async fn generate(
                 .collect();
             
             if !relevant.is_empty() {
-                full_prompt.push_str("=== РЕЛЕВАНТНЫЙ КОНТЕКСТ (semantic search) ===\n");
+                full_prompt.push_str("=== РЕЛЕВАНТНЫЙ КОНТЕКСТ (для справки) ===\n");
                 for result in relevant {
                     let source = match result.source_type.as_str() {
                         "memory" => "Память",
                         "message" => "Сообщение",
                         _ => &result.source_type,
                     };
-                    full_prompt.push_str(&format!("[{} | сходство: {:.0}%] {}\n",
+                    full_prompt.push_str(&format!("[{}] {}\n",
                         source,
-                        result.similarity * 100.0,
                         result.content.chars().take(200).collect::<String>()));
                 }
                 full_prompt.push_str("\n");
@@ -605,6 +625,16 @@ pub fn stop_speaking() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn is_stt_available() -> bool {
+    voice::is_stt_available()
+}
+
+#[tauri::command]
+pub fn transcribe_audio(audio_path: String) -> Result<String, String> {
+    voice::transcribe_audio(&audio_path)
+}
+
 // ==================== Voice Recordings (from chat) ====================
 
 #[tauri::command]
@@ -633,6 +663,10 @@ pub fn save_voice_from_chat(app: AppHandle, base64_audio: String) -> Result<Stri
     
     let path_str = path.to_string_lossy().to_string();
     database::save_voice_recording(&path_str).map_err(|e| e.to_string())?;
+    
+    // Set last audio path for whisper transcription
+    voice::set_last_audio_path(&path_str);
+    
     Ok(path_str)
 }
 

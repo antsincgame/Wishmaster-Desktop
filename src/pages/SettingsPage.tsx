@@ -135,7 +135,7 @@ export function SettingsPage() {
             </p>
             <button
               onClick={() => handleSave({ 
-                systemPrompt: 'Ты - Wishmaster, умный AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке.'
+                systemPrompt: 'Ты — Wishmaster, умный диалоговый AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке. Отвечай только содержательным текстом, без процентов, формул сходства и служебных меток.'
               })}
               className="text-xs text-gray-400 hover:text-neon-cyan"
             >

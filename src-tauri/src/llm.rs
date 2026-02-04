@@ -125,7 +125,10 @@ pub fn is_gpu_available() -> bool {
 
 pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
     let gpu_available = is_gpu_available();
-    
+
+    // Unload current model first to avoid GPU/memory conflicts when switching models
+    unload_model();
+
     println!("╔══════════════════════════════════════════╗");
     println!("║          LOADING MODEL                   ║");
     println!("╠══════════════════════════════════════════╣");
@@ -133,12 +136,12 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
     println!("║ Context: {} tokens", context_length);
     println!("║ GPU Layers: {}", if gpu_available { "99 (max)" } else { "0 (CPU)" });
     println!("╚══════════════════════════════════════════╝");
-    
+
     // Check if file exists
     if !std::path::Path::new(path).exists() {
         return Err(format!("Model file not found: {}", path));
     }
-    
+
     // Get backend
     let backend = BACKEND.get().ok_or("Backend not initialized")?;
     

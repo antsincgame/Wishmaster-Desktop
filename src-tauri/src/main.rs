@@ -115,6 +115,8 @@ fn main() {
             commands::stop_recording,
             commands::speak,
             commands::stop_speaking,
+            commands::is_stt_available,
+            commands::transcribe_audio,
             commands::get_voice_recordings,
             commands::save_voice_from_chat,
             commands::create_voice_profile_from_recording,

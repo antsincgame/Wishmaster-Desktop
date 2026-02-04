@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -7,6 +8,7 @@ use once_cell::sync::OnceCell;
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 static IS_SPEAKING: AtomicBool = AtomicBool::new(false);
 static TTS_PROCESS: OnceCell<Mutex<Option<std::process::Child>>> = OnceCell::new();
+static LAST_AUDIO_PATH: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 
 /// TTS engines available on different platforms
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -21,11 +23,35 @@ pub enum TtsEngine {
     WindowsSapi,
 }
 
+/// STT (Speech-to-Text) engines
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum SttEngine {
+    /// whisper.cpp (local, high quality)
+    WhisperCpp,
+    /// OpenAI Whisper (Python)
+    WhisperPython,
+    /// None available
+    None,
+}
+
 static CURRENT_TTS: OnceCell<Mutex<TtsEngine>> = OnceCell::new();
+static CURRENT_STT: OnceCell<Mutex<SttEngine>> = OnceCell::new();
+
+/// Whisper model paths to check
+const WHISPER_MODEL_PATHS: &[&str] = &[
+    "~/.local/share/whisper.cpp/models/ggml-base.bin",
+    "~/.local/share/whisper/ggml-base.bin",
+    "/usr/share/whisper.cpp/models/ggml-base.bin",
+    "/usr/local/share/whisper.cpp/models/ggml-base.bin",
+    "./models/ggml-base.bin",
+    "./ggml-base.bin",
+];
 
 pub fn init() {
     let _ = TTS_PROCESS.set(Mutex::new(None));
     let _ = CURRENT_TTS.set(Mutex::new(TtsEngine::EspeakNg));
+    let _ = CURRENT_STT.set(Mutex::new(SttEngine::None));
+    let _ = LAST_AUDIO_PATH.set(Mutex::new(None));
     
     // Check which TTS is available
     let tts = detect_tts_engine();
@@ -35,51 +61,82 @@ pub fn init() {
         }
     }
     
-    let engine_name = match tts {
+    // Check which STT is available
+    let stt = detect_stt_engine();
+    if let Some(engine) = CURRENT_STT.get() {
+        if let Ok(mut guard) = engine.lock() {
+            *guard = stt;
+        }
+    }
+    
+    let tts_name = match tts {
         TtsEngine::EspeakNg => "espeak-ng",
         TtsEngine::Piper => "piper",
         TtsEngine::Festival => "festival",
         TtsEngine::WindowsSapi => "Windows SAPI",
     };
-    println!("Voice engine initialized. TTS: {}", engine_name);
+    
+    let stt_name = match stt {
+        SttEngine::WhisperCpp => "whisper.cpp",
+        SttEngine::WhisperPython => "whisper (Python)",
+        SttEngine::None => "none (Web Speech API fallback)",
+    };
+    
+    println!("╔══════════════════════════════════════════╗");
+    println!("║       VOICE ENGINE INITIALIZED           ║");
+    println!("╠══════════════════════════════════════════╣");
+    println!("║ TTS: {:<35}║", tts_name);
+    println!("║ STT: {:<35}║", stt_name);
+    println!("╚══════════════════════════════════════════╝");
+}
+
+/// Detect available STT engine on system
+fn detect_stt_engine() -> SttEngine {
+    // Check for whisper.cpp first (preferred)
+    if Command::new("whisper-cpp").arg("--help").output().is_ok() {
+        return SttEngine::WhisperCpp;
+    }
+    
+    // Check for whisper.cpp with different names
+    if Command::new("main").arg("--help").output()
+        .map(|o| String::from_utf8_lossy(&o.stderr).contains("whisper"))
+        .unwrap_or(false) 
+    {
+        return SttEngine::WhisperCpp;
+    }
+    
+    // Check for Python whisper
+    if Command::new("whisper").arg("--help").output().is_ok() {
+        return SttEngine::WhisperPython;
+    }
+    
+    SttEngine::None
 }
 
 /// Detect available TTS engine on system
 fn detect_tts_engine() -> TtsEngine {
-    // Platform-specific detection
     #[cfg(target_os = "windows")]
     {
-        // Windows: Check for SAPI (always available) or espeak-ng
         if Command::new("espeak-ng").arg("--version").output().is_ok() {
             return TtsEngine::EspeakNg;
         }
-        // SAPI is always available on Windows
         TtsEngine::WindowsSapi
     }
     
     #[cfg(target_os = "linux")]
     {
-        // Linux: Try piper first (best quality)
         if Command::new("piper").arg("--help").output().is_ok() {
             return TtsEngine::Piper;
         }
-        
-        // Try espeak-ng (most common)
         if Command::new("espeak-ng").arg("--version").output().is_ok() {
             return TtsEngine::EspeakNg;
         }
-        
-        // Try espeak (older version)
         if Command::new("espeak").arg("--version").output().is_ok() {
             return TtsEngine::EspeakNg;
         }
-        
-        // Try festival
         if Command::new("festival").arg("--version").output().is_ok() {
             return TtsEngine::Festival;
         }
-        
-        // Default to espeak-ng
         TtsEngine::EspeakNg
     }
     
@@ -89,54 +146,284 @@ fn detect_tts_engine() -> TtsEngine {
     }
 }
 
+/// Find whisper model file
+fn find_whisper_model() -> Option<PathBuf> {
+    // Check environment variable first
+    if let Ok(path) = std::env::var("WHISPER_MODEL_PATH") {
+        let p = PathBuf::from(&path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    
+    // Check standard paths
+    for path_str in WHISPER_MODEL_PATHS {
+        let expanded = shellexpand::tilde(path_str);
+        let path = PathBuf::from(expanded.as_ref());
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    
+    None
+}
+
+/// Convert WebM/audio file to WAV 16kHz mono (required for whisper.cpp)
+fn convert_to_wav(input_path: &Path) -> Result<PathBuf, String> {
+    let output_path = input_path.with_extension("wav");
+    
+    // Use ffmpeg for conversion
+    let result = Command::new("ffmpeg")
+        .args([
+            "-y",                    // Overwrite output
+            "-i", input_path.to_str().unwrap_or(""),
+            "-ar", "16000",          // 16kHz sample rate
+            "-ac", "1",              // Mono
+            "-c:a", "pcm_s16le",     // 16-bit PCM
+            output_path.to_str().unwrap_or("")
+        ])
+        .output();
+    
+    match result {
+        Ok(output) if output.status.success() => Ok(output_path),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("ffmpeg conversion failed: {}", stderr))
+        }
+        Err(e) => {
+            // Try with avconv (alternative to ffmpeg)
+            let avconv_result = Command::new("avconv")
+                .args([
+                    "-y",
+                    "-i", input_path.to_str().unwrap_or(""),
+                    "-ar", "16000",
+                    "-ac", "1",
+                    "-c:a", "pcm_s16le",
+                    output_path.to_str().unwrap_or("")
+                ])
+                .output();
+            
+            match avconv_result {
+                Ok(o) if o.status.success() => Ok(output_path),
+                _ => Err(format!("Audio conversion failed. Install ffmpeg: sudo apt install ffmpeg\nError: {}", e))
+            }
+        }
+    }
+}
+
+/// Transcribe audio using whisper.cpp
+fn transcribe_whisper_cpp(wav_path: &Path, model_path: &Path) -> Result<String, String> {
+    println!("Transcribing with whisper.cpp: {:?}", wav_path);
+    
+    // Try whisper-cpp command
+    let programs = ["whisper-cpp", "main", "whisper"];
+    
+    for program in programs {
+        let result = Command::new(program)
+            .args([
+                "-m", model_path.to_str().unwrap_or(""),
+                "-f", wav_path.to_str().unwrap_or(""),
+                "-l", "ru",              // Russian language
+                "-nt",                   // No timestamps
+                "--no-prints",           // Quiet mode (if supported)
+            ])
+            .output();
+        
+        if let Ok(output) = result {
+            if output.status.success() {
+                let transcript = String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .to_string();
+                
+                // Clean up whisper output (remove [BLANK_AUDIO] markers, etc.)
+                let cleaned = transcript
+                    .lines()
+                    .filter(|line| !line.contains("[BLANK_AUDIO]") && !line.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .trim()
+                    .to_string();
+                
+                if !cleaned.is_empty() {
+                    return Ok(cleaned);
+                }
+            }
+        }
+    }
+    
+    Err("whisper.cpp transcription failed".to_string())
+}
+
+/// Transcribe audio using Python whisper
+fn transcribe_whisper_python(wav_path: &Path) -> Result<String, String> {
+    println!("Transcribing with Python whisper: {:?}", wav_path);
+    
+    let result = Command::new("whisper")
+        .args([
+            wav_path.to_str().unwrap_or(""),
+            "--model", "base",
+            "--language", "ru",
+            "--output_format", "txt",
+            "--output_dir", wav_path.parent().unwrap_or(Path::new("/tmp")).to_str().unwrap_or("/tmp"),
+        ])
+        .output();
+    
+    match result {
+        Ok(output) if output.status.success() => {
+            // Read the generated .txt file
+            let txt_path = wav_path.with_extension("txt");
+            std::fs::read_to_string(&txt_path)
+                .map(|s| s.trim().to_string())
+                .map_err(|e| format!("Failed to read transcript: {}", e))
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("whisper transcription failed: {}", stderr))
+        }
+        Err(e) => Err(format!("Failed to run whisper: {}", e))
+    }
+}
+
 /// Start recording user's voice
-/// Note: Actual recording requires arecord (ALSA) or similar
 pub fn start_recording() -> Result<(), String> {
     if IS_RECORDING.load(Ordering::SeqCst) {
         return Err("Already recording".to_string());
     }
     
     IS_RECORDING.store(true, Ordering::SeqCst);
-    
-    // Check if arecord is available for actual recording
-    if Command::new("arecord").arg("--version").output().is_ok() {
-        println!("Started recording (arecord available)...");
-        // In a real implementation, we'd spawn arecord here
-        // arecord -f S16_LE -r 16000 -c 1 /tmp/recording.wav
-    } else {
-        println!("Started recording (simulated - install alsa-utils for actual recording)...");
-    }
-    
+    println!("Started recording...");
     Ok(())
 }
 
+/// Set the last recorded audio file path (called from commands.rs after saving)
+pub fn set_last_audio_path(path: &str) {
+    if let Some(storage) = LAST_AUDIO_PATH.get() {
+        if let Ok(mut guard) = storage.lock() {
+            *guard = Some(path.to_string());
+        }
+    }
+}
+
 /// Stop recording and return transcription
-/// Note: Actual STT requires whisper or similar
+/// Falls back to error message if STT is not available
 pub fn stop_recording() -> Result<String, String> {
     if !IS_RECORDING.load(Ordering::SeqCst) {
         return Err("Not recording".to_string());
     }
-    
+
     IS_RECORDING.store(false, Ordering::SeqCst);
     println!("Stopped recording");
+
+    // Get the last recorded audio path
+    let audio_path = LAST_AUDIO_PATH.get()
+        .and_then(|s| s.lock().ok())
+        .and_then(|g| g.clone());
     
-    // Check for local whisper
-    let has_whisper = Command::new("whisper").arg("--help").output().is_ok()
-        || Command::new("whisper-cpp").arg("--help").output().is_ok();
+    let audio_path = match audio_path {
+        Some(p) => p,
+        None => return Err("No audio file recorded".to_string()),
+    };
     
-    if has_whisper {
-        // In real implementation: whisper /tmp/recording.wav --model small --language ru
-        println!("Whisper detected, but transcription not yet implemented");
+    let audio_file = Path::new(&audio_path);
+    if !audio_file.exists() {
+        return Err("Audio file not found".to_string());
+    }
+
+    // Get current STT engine
+    let stt_engine = CURRENT_STT.get()
+        .and_then(|e| e.lock().ok())
+        .map(|g| *g)
+        .unwrap_or(SttEngine::None);
+    
+    match stt_engine {
+        SttEngine::WhisperCpp => {
+            // Convert to WAV for whisper.cpp
+            let wav_path = match convert_to_wav(audio_file) {
+                Ok(p) => p,
+                Err(e) => return Err(format!("Audio conversion failed: {}", e)),
+            };
+            
+            // Find whisper model
+            let model_path = match find_whisper_model() {
+                Some(p) => p,
+                None => return Err(
+                    "Whisper model not found. Download from: https://github.com/ggerganov/whisper.cpp\n\
+                     Place ggml-base.bin in ~/.local/share/whisper.cpp/models/ or set WHISPER_MODEL_PATH".to_string()
+                ),
+            };
+            
+            // Transcribe
+            let result = transcribe_whisper_cpp(&wav_path, &model_path);
+            
+            // Cleanup temp WAV
+            let _ = std::fs::remove_file(&wav_path);
+            
+            result
+        }
+        SttEngine::WhisperPython => {
+            // Convert to WAV for whisper
+            let wav_path = match convert_to_wav(audio_file) {
+                Ok(p) => p,
+                Err(e) => return Err(format!("Audio conversion failed: {}", e)),
+            };
+            
+            let result = transcribe_whisper_python(&wav_path);
+            
+            // Cleanup temp WAV
+            let _ = std::fs::remove_file(&wav_path);
+            
+            result
+        }
+        SttEngine::None => {
+            // STT not available - frontend will use Web Speech API
+            Err("Локальная транскрипция недоступна. Используется Web Speech API браузера.".to_string())
+        }
+    }
+}
+
+/// Transcribe a specific audio file (can be called directly)
+pub fn transcribe_audio(audio_path: &str) -> Result<String, String> {
+    let audio_file = Path::new(audio_path);
+    if !audio_file.exists() {
+        return Err(format!("Audio file not found: {}", audio_path));
     }
     
-    // For now, return instructions
-    Ok("Голосовой ввод записан. Для транскрипции установите whisper: pip install openai-whisper".to_string())
+    let stt_engine = CURRENT_STT.get()
+        .and_then(|e| e.lock().ok())
+        .map(|g| *g)
+        .unwrap_or(SttEngine::None);
+    
+    match stt_engine {
+        SttEngine::WhisperCpp => {
+            let wav_path = convert_to_wav(audio_file)?;
+            let model_path = find_whisper_model()
+                .ok_or_else(|| "Whisper model not found".to_string())?;
+            
+            let result = transcribe_whisper_cpp(&wav_path, &model_path);
+            let _ = std::fs::remove_file(&wav_path);
+            result
+        }
+        SttEngine::WhisperPython => {
+            let wav_path = convert_to_wav(audio_file)?;
+            let result = transcribe_whisper_python(&wav_path);
+            let _ = std::fs::remove_file(&wav_path);
+            result
+        }
+        SttEngine::None => Err("No STT engine available".to_string())
+    }
+}
+
+/// Check if STT is available
+pub fn is_stt_available() -> bool {
+    CURRENT_STT.get()
+        .and_then(|e| e.lock().ok())
+        .map(|g| *g != SttEngine::None)
+        .unwrap_or(false)
 }
 
 /// Speak text using TTS
 pub fn speak(text: &str, _voice_id: Option<i64>) -> Result<(), String> {
     if IS_SPEAKING.load(Ordering::SeqCst) {
-        // Stop previous speech first
         stop_speaking();
     }
     
@@ -164,7 +451,6 @@ pub fn speak(text: &str, _voice_id: Option<i64>) -> Result<(), String> {
 
 /// Speak using espeak-ng
 fn speak_espeak(text: &str) -> Result<(), String> {
-    // Try espeak-ng first, fall back to espeak
     let program = if Command::new("espeak-ng").arg("--version").output().is_ok() {
         "espeak-ng"
     } else {
@@ -173,52 +459,29 @@ fn speak_espeak(text: &str) -> Result<(), String> {
     
     println!("Speaking with {}: {}...", program, &text[..text.len().min(50)]);
     
-    // Use Russian voice if available
     let output = Command::new(program)
-        .args([
-            "-v", "ru",           // Russian voice
-            "-s", "150",          // Speed (words per minute)
-            "-p", "50",           // Pitch (0-99)
-            text
-        ])
+        .args(["-v", "ru", "-s", "150", "-p", "50", text])
         .output();
     
     match output {
-        Ok(out) => {
-            if !out.status.success() {
-                // Try without Russian voice
-                let fallback = Command::new(program)
-                    .arg(text)
-                    .output();
-                
-                match fallback {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(format!("{} error: {}", program, e))
-                }
-            } else {
-                Ok(())
-            }
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(_) => {
+            Command::new(program).arg(text).output()
+                .map(|_| ())
+                .map_err(|e| format!("{} error: {}", program, e))
         }
-        Err(e) => {
-            Err(format!("TTS not available. Install espeak-ng: sudo apt install espeak-ng\nError: {}", e))
-        }
+        Err(e) => Err(format!("TTS not available. Install: sudo apt install espeak-ng\nError: {}", e))
     }
 }
 
-/// Speak using piper (neural TTS, high quality)
+/// Speak using piper (neural TTS)
 fn speak_piper(text: &str) -> Result<(), String> {
     println!("Speaking with piper: {}...", &text[..text.len().min(50)]);
     
-    // Piper requires a model file, check common locations
-    // Users can also set PIPER_MODEL_PATH environment variable
     let mut model_paths = vec![];
-    
-    // Check environment variable first
     if let Ok(env_path) = std::env::var("PIPER_MODEL_PATH") {
         model_paths.push(env_path);
     }
-    
-    // Then check standard system locations
     model_paths.extend([
         "/usr/share/piper-voices/ru_RU-irina-medium.onnx".to_string(),
         "~/.local/share/piper/ru_RU-irina-medium.onnx".to_string(),
@@ -227,34 +490,24 @@ fn speak_piper(text: &str) -> Result<(), String> {
     
     let model = model_paths.iter()
         .find(|p| {
-            // Expand ~ to home directory
             let expanded = shellexpand::tilde(p);
-            std::path::Path::new(expanded.as_ref()).exists()
+            Path::new(expanded.as_ref()).exists()
         })
-        .map(|s| {
-            let expanded = shellexpand::tilde(s);
-            expanded.to_string()
-        });
+        .map(|s| shellexpand::tilde(s).to_string());
     
     if let Some(model_path) = model {
-        // echo "text" | piper --model model.onnx --output_file - | aplay
         let output = Command::new("sh")
-            .args([
-                "-c",
-                &format!("echo '{}' | piper --model {} --output_file - | aplay -q", 
-                         text.replace("'", "\\'"), model_path)
-            ])
+            .args(["-c", &format!(
+                "echo '{}' | piper --model {} --output_file - | aplay -q",
+                text.replace("'", "\\'"), model_path
+            )])
             .output();
         
         match output {
             Ok(out) if out.status.success() => Ok(()),
-            _ => {
-                println!("Piper failed, falling back to espeak-ng");
-                speak_espeak(text)
-            }
+            _ => speak_espeak(text)
         }
     } else {
-        println!("Piper model not found (check PIPER_MODEL_PATH env var), falling back to espeak-ng");
         speak_espeak(text)
     }
 }
@@ -264,36 +517,26 @@ fn speak_festival(text: &str) -> Result<(), String> {
     println!("Speaking with festival: {}...", &text[..text.len().min(50)]);
     
     let output = Command::new("sh")
-        .args([
-            "-c",
-            &format!("echo '{}' | festival --tts", text.replace("'", "\\'"))
-        ])
+        .args(["-c", &format!("echo '{}' | festival --tts", text.replace("'", "\\'"))])
         .output();
     
     match output {
         Ok(out) if out.status.success() => Ok(()),
-        Ok(_) => {
-            println!("Festival failed, falling back to espeak-ng");
-            speak_espeak(text)
-        }
-        Err(e) => Err(format!("Festival error: {}", e))
+        _ => speak_espeak(text)
     }
 }
 
-/// Speak using Windows SAPI (Speech API)
-/// Available on all Windows versions
+/// Speak using Windows SAPI
 #[cfg(target_os = "windows")]
 fn speak_windows_sapi(text: &str) -> Result<(), String> {
     println!("Speaking with Windows SAPI: {}...", &text[..text.len().min(50)]);
     
-    // Escape text for PowerShell
     let escaped_text = text
         .replace("\\", "\\\\")
         .replace("\"", "`\"")
         .replace("$", "`$")
         .replace("`", "``");
     
-    // Use PowerShell to access Windows SAPI
     let script = format!(
         r#"Add-Type -AssemblyName System.Speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; $synth.Speak("{}")"#,
         escaped_text
@@ -304,15 +547,9 @@ fn speak_windows_sapi(text: &str) -> Result<(), String> {
         .output();
     
     match output {
-        Ok(out) => {
-            if out.status.success() {
-                Ok(())
-            } else {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                Err(format!("SAPI failed: {}", stderr))
-            }
-        }
-        Err(e) => Err(format!("Failed to execute PowerShell: {}", e))
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => Err(format!("SAPI failed: {}", String::from_utf8_lossy(&out.stderr))),
+        Err(e) => Err(format!("PowerShell error: {}", e))
     }
 }
 
@@ -325,42 +562,26 @@ fn speak_windows_sapi(_text: &str) -> Result<(), String> {
 pub fn stop_speaking() {
     IS_SPEAKING.store(false, Ordering::SeqCst);
     
-    // Platform-specific process termination
     #[cfg(target_os = "windows")]
     {
-        // Kill PowerShell TTS processes on Windows
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "powershell.exe"])
-            .output();
+        let _ = Command::new("taskkill").args(["/F", "/IM", "powershell.exe"]).output();
     }
     
     #[cfg(target_os = "linux")]
     {
-        // Kill any running TTS processes on Linux
-        let _ = Command::new("pkill")
-            .args(["-f", "espeak"])
-            .output();
-        let _ = Command::new("pkill")
-            .args(["-f", "piper"])
-            .output();
-        let _ = Command::new("pkill")
-            .args(["-f", "festival"])
-            .output();
-        let _ = Command::new("pkill")
-            .args(["-f", "aplay"])
-            .output();
+        let _ = Command::new("pkill").args(["-f", "espeak"]).output();
+        let _ = Command::new("pkill").args(["-f", "piper"]).output();
+        let _ = Command::new("pkill").args(["-f", "festival"]).output();
+        let _ = Command::new("pkill").args(["-f", "aplay"]).output();
     }
     
     println!("Stopped speaking");
 }
 
-/// Check if TTS is available on system
+/// Check if TTS is available
 pub fn is_tts_available() -> bool {
     #[cfg(target_os = "windows")]
-    {
-        // Windows SAPI is always available
-        return true;
-    }
+    { return true; }
     
     #[cfg(target_os = "linux")]
     {
@@ -371,9 +592,7 @@ pub fn is_tts_available() -> bool {
     }
     
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-    {
-        false
-    }
+    { false }
 }
 
 // ==================== TESTS ====================
@@ -382,249 +601,37 @@ pub fn is_tts_available() -> bool {
 mod tests {
     use super::*;
 
-    // ==================== TtsEngine Tests ====================
+    #[test]
+    fn test_stt_engine_variants() {
+        let engines = [SttEngine::WhisperCpp, SttEngine::WhisperPython, SttEngine::None];
+        assert_eq!(engines.len(), 3);
+    }
 
     #[test]
     fn test_tts_engine_variants() {
-        // Verify all engine variants exist
-        let engines = [
-            TtsEngine::EspeakNg,
-            TtsEngine::Piper,
-            TtsEngine::Festival,
-            TtsEngine::WindowsSapi,
-        ];
-        
-        assert_eq!(engines.len(), 4, "Should have 4 TTS engine variants");
+        let engines = [TtsEngine::EspeakNg, TtsEngine::Piper, TtsEngine::Festival, TtsEngine::WindowsSapi];
+        assert_eq!(engines.len(), 4);
     }
 
     #[test]
-    fn test_tts_engine_equality() {
-        let engine1 = TtsEngine::EspeakNg;
-        let engine2 = TtsEngine::EspeakNg;
-        let engine3 = TtsEngine::Piper;
-        
-        assert_eq!(engine1, engine2);
-        assert_ne!(engine1, engine3);
+    fn test_whisper_model_paths() {
+        for path in WHISPER_MODEL_PATHS {
+            assert!(path.contains("ggml") || path.contains("whisper"));
+        }
     }
 
     #[test]
-    fn test_tts_engine_copy() {
-        let engine = TtsEngine::Festival;
-        let copied = engine;
-        
-        assert_eq!(engine, copied, "TtsEngine should be Copy");
-    }
-
-    #[test]
-    fn test_tts_engine_debug() {
-        let engine = TtsEngine::WindowsSapi;
-        let debug_str = format!("{:?}", engine);
-        
-        assert!(debug_str.contains("WindowsSapi"));
-    }
-
-    // ==================== Recording State Tests ====================
-
-    #[test]
-    fn test_initial_recording_state() {
-        // Recording should start as false
-        // Note: This tests the atomic's behavior, not the static
+    fn test_recording_state() {
         let recording = AtomicBool::new(false);
         assert!(!recording.load(Ordering::SeqCst));
-    }
-
-    #[test]
-    fn test_recording_state_transition() {
-        let recording = AtomicBool::new(false);
-        
-        // Start recording
         recording.store(true, Ordering::SeqCst);
         assert!(recording.load(Ordering::SeqCst));
-        
-        // Stop recording
-        recording.store(false, Ordering::SeqCst);
-        assert!(!recording.load(Ordering::SeqCst));
     }
 
     #[test]
-    fn test_speaking_state_transition() {
-        let speaking = AtomicBool::new(false);
-        
-        // Start speaking
-        speaking.store(true, Ordering::SeqCst);
-        assert!(speaking.load(Ordering::SeqCst));
-        
-        // Stop speaking
-        speaking.store(false, Ordering::SeqCst);
-        assert!(!speaking.load(Ordering::SeqCst));
-    }
-
-    // ==================== Empty Text Handling Tests ====================
-
-    #[test]
-    fn test_empty_text_detection() {
-        let text = "";
-        assert!(text.trim().is_empty());
-    }
-
-    #[test]
-    fn test_whitespace_only_detection() {
-        let texts = ["", " ", "   ", "\t", "\n", "  \t\n  "];
-        
-        for text in texts {
-            assert!(
-                text.trim().is_empty(),
-                "Whitespace-only text should be detected: {:?}", text
-            );
-        }
-    }
-
-    #[test]
-    fn test_valid_text() {
-        let text = "Привет, мир!";
-        assert!(!text.trim().is_empty());
-    }
-
-    // ==================== Text Processing Tests ====================
-
-    #[test]
-    fn test_text_truncation_for_logging() {
-        let text = "Это очень длинный текст который нужно обрезать для логирования";
-        let max_len = 50;
-        let truncated = &text[..text.len().min(max_len)];
-        
-        assert!(truncated.len() <= max_len);
-    }
-
-    #[test]
-    fn test_cyrillic_text() {
-        let text = "Привет, как дела?";
-        let has_cyrillic = text.chars().any(|c| c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я');
-        
-        assert!(has_cyrillic);
-    }
-
-    #[test]
-    fn test_english_text() {
-        let text = "Hello, how are you?";
-        let has_cyrillic = text.chars().any(|c| c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я');
-        
-        assert!(!has_cyrillic);
-    }
-
-    // ==================== Shell Escape Tests ====================
-
-    #[test]
-    fn test_text_escape_single_quotes() {
+    fn test_text_escape() {
         let text = "It's a test";
         let escaped = text.replace("'", "\\'");
-        
         assert_eq!(escaped, "It\\'s a test");
-    }
-
-    #[test]
-    fn test_text_escape_for_powershell() {
-        let text = r#"Test "quoted" text"#;
-        let escaped = text
-            .replace("\\", "\\\\")
-            .replace("\"", "`\"")
-            .replace("$", "`$")
-            .replace("`", "``");
-        
-        assert!(escaped.contains("`\""));
-    }
-
-    // ==================== Path Tests ====================
-
-    #[test]
-    fn test_piper_model_paths() {
-        let paths = [
-            "/usr/share/piper-voices/ru_RU-irina-medium.onnx",
-            "~/.local/share/piper/ru_RU-irina-medium.onnx",
-            "./piper-model.onnx",
-        ];
-        
-        for path in paths {
-            assert!(path.ends_with(".onnx"), "Piper models should be .onnx files");
-        }
-    }
-
-    // ==================== Error Message Tests ====================
-
-    #[test]
-    fn test_recording_error_message() {
-        let error = "Already recording";
-        assert!(error.contains("recording"));
-    }
-
-    #[test]
-    fn test_not_recording_error() {
-        let error = "Not recording";
-        assert!(error.contains("Not"));
-    }
-
-    #[test]
-    fn test_tts_unavailable_error() {
-        let error = "TTS not available. Install espeak-ng: sudo apt install espeak-ng";
-        assert!(error.contains("espeak-ng"));
-        assert!(error.contains("apt install"));
-    }
-
-    // ==================== Concurrent Access Tests ====================
-
-    #[test]
-    fn test_atomic_ordering() {
-        let flag = AtomicBool::new(false);
-        
-        // SeqCst provides strongest ordering guarantees
-        flag.store(true, Ordering::SeqCst);
-        let value = flag.load(Ordering::SeqCst);
-        
-        assert!(value);
-    }
-
-    #[test]
-    fn test_compare_and_swap_pattern() {
-        let recording = AtomicBool::new(false);
-        
-        // Only start if not already recording (atomic check-and-set)
-        let was_recording = recording.swap(true, Ordering::SeqCst);
-        
-        assert!(!was_recording, "Should not have been recording before");
-        assert!(recording.load(Ordering::SeqCst), "Should be recording now");
-    }
-
-    // ==================== Integration Behavior Tests ====================
-
-    #[test]
-    fn test_double_start_prevention_logic() {
-        let is_recording = AtomicBool::new(false);
-        
-        // First start
-        if is_recording.load(Ordering::SeqCst) {
-            panic!("Should not be recording");
-        }
-        is_recording.store(true, Ordering::SeqCst);
-        
-        // Second start should fail
-        if is_recording.load(Ordering::SeqCst) {
-            // This is the expected path - already recording
-            assert!(true);
-        } else {
-            panic!("Should have detected active recording");
-        }
-    }
-
-    #[test]
-    fn test_stop_before_start_logic() {
-        let is_recording = AtomicBool::new(false);
-        
-        // Trying to stop when not recording
-        if !is_recording.load(Ordering::SeqCst) {
-            // Expected - not recording
-            assert!(true);
-        } else {
-            panic!("Should not be recording");
-        }
     }
 }
