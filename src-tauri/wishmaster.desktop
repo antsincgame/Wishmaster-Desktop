@@ -5,6 +5,6 @@ Exec=wishmaster-desktop
 Icon=wishmaster-desktop
 Terminal=false
 Type=Application
-Categories=Utility;Development;AI;
+Categories=Utility;
 Keywords=AI;LLM;Chat;Assistant;
 StartupWMClass=wishmaster-desktop
