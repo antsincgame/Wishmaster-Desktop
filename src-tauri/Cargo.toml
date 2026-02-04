@@ -23,8 +23,7 @@ base64 = "0.21"
 thiserror = "1.0"  # Custom error types
 
 # LLM - native llama.cpp bindings (CPU by default, CUDA optional)
-# Pin to 0.1.80 for stable API (newer versions changed sampling methods)
-llama-cpp-2 = "=0.1.80"
+llama-cpp-2 = "0.1"
 
 # Embeddings for semantic search / RAG
 # Pin to 3.x for stable InitOptions API

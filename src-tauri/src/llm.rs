@@ -3,17 +3,20 @@ use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
+use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 static BACKEND: OnceCell<LlamaBackend> = OnceCell::new();
 static MODEL: OnceCell<Mutex<Option<LlamaModel>>> = OnceCell::new();
 static MODEL_PATH: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 static CONTEXT_SIZE: OnceCell<Mutex<u32>> = OnceCell::new();
 static GPU_AVAILABLE: OnceCell<bool> = OnceCell::new();
+static SEED_COUNTER: AtomicU32 = AtomicU32::new(42);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,7 +36,12 @@ const STOP_SEQUENCES: &[&str] = &[
     "<|endoftext|>",
 ];
 
-/// Sample a token with temperature
+/// Get next seed for random sampling (simple incrementing counter)
+fn next_seed() -> u32 {
+    SEED_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Sample a token with temperature using the new Sampler API
 /// 
 /// Temperature controls randomness:
 /// - temp = 0.0: greedy (always pick highest probability)
@@ -43,18 +51,17 @@ const STOP_SEQUENCES: &[&str] = &[
 fn sample_with_temperature(candidates: &mut LlamaTokenDataArray, temperature: f32) -> llama_cpp_2::token::LlamaToken {
     if temperature <= 0.0 {
         // Greedy sampling - pick the most likely token
-        candidates.sample_token_greedy()
+        candidates.apply_sampler(&LlamaSampler::greedy());
+        candidates.selected_token().expect("Greedy sampler should always select a token")
     } else {
-        // Apply softmax first to convert logits to probabilities
-        candidates.sample_softmax();
+        // Create a sampler chain: temperature -> random distribution
+        let mut sampler = LlamaSampler::chain_simple([
+            LlamaSampler::temp(temperature),
+            LlamaSampler::dist(next_seed()),
+        ]);
         
-        // Apply temperature scaling
-        // Higher temperature = more uniform distribution = more randomness
-        candidates.sample_temp(temperature);
-        
-        // Sample from the distribution
-        // Note: sample_token uses the probability distribution after temp scaling
-        candidates.sample_token()
+        candidates.apply_sampler(&mut sampler);
+        candidates.selected_token().expect("Dist sampler should always select a token")
     }
 }
 
