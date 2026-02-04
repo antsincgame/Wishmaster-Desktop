@@ -13,7 +13,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Job 1: Build DEB and RPM on Ubuntu 24.04 (native, fast)
+  # Job 1: Build DEB and RPM on Ubuntu 24.04 (with embeddings feature)
   build-linux-packages:
     name: Build Linux DEB/RPM
     runs-on: ubuntu-24.04
@@ -74,7 +74,7 @@ jobs:
 
     - name: Rust syntax check
       working-directory: src-tauri
-      run: cargo check --features "custom-protocol"
+      run: cargo check
 
     - name: Build Tauri DEB and RPM
       run: npx tauri build --bundles deb,rpm
@@ -82,7 +82,7 @@ jobs:
     - name: List build output
       run: |
         echo "=== Bundle directory ==="
-        find src-tauri/target/release/bundle -name "*.deb" -o -name "*.rpm" 2>/dev/null | xargs ls -lh || echo "No packages found"
+        find src-tauri/target/release/bundle -type f \( -name "*.deb" -o -name "*.rpm" \) 2>/dev/null | while read f; do ls -lh "$f"; done || echo "No packages found"
 
     - name: Upload Linux DEB
       uses: actions/upload-artifact@v4
@@ -98,30 +98,23 @@ jobs:
         path: src-tauri/target/release/bundle/rpm/*.rpm
         if-no-files-found: warn
 
-  # Job 2: Build AppImage using Docker with Ubuntu 22.04
-  # Use custom linuxdeploy build for glibc compatibility
+  # Job 2: Build AppImage on Ubuntu 22.04 (native runner, no Docker)
+  # Ubuntu 22.04 provides glibc 2.35 - good compatibility with most Linux distros
   build-linux-appimage:
     name: Build Linux AppImage
-    runs-on: ubuntu-24.04
-    container:
-      image: ubuntu:22.04
-      options: --privileged
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    runs-on: ubuntu-22.04
     steps:
-    - name: Install git and dependencies
-      run: |
-        apt-get update
-        apt-get install -y git curl wget sudo
-
     - name: Checkout
       uses: actions/checkout@v4
 
     - name: Install system dependencies
       run: |
-        apt-get install -y \
+        sudo apt-get update
+        sudo apt-get install -y \
           libwebkit2gtk-4.1-dev \
           build-essential \
+          curl \
+          wget \
           file \
           libxdo-dev \
           libssl-dev \
@@ -130,22 +123,26 @@ jobs:
           libsqlite3-dev \
           pkg-config \
           libfuse2 \
-          patchelf \
-          ca-certificates \
           libclang-dev \
           clang \
-          cmake \
-          squashfs-tools
+          cmake
 
     - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+        cache-on-failure: true
+        # Different cache key for AppImage build (no embeddings)
+        prefix-key: "v0-rust-appimage"
 
     - name: Install Node.js
-      run: |
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt-get install -y nodejs
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
 
     - name: Install npm dependencies
       run: npm ci
@@ -153,73 +150,21 @@ jobs:
     - name: Build frontend
       run: npm run build
 
-    - name: Build Rust binary
+    - name: Build Tauri AppImage
       run: |
-        export PATH="$HOME/.cargo/bin:$PATH"
-        # Build without embeddings feature for glibc 2.35 compatibility
-        cd src-tauri && cargo build --release --no-default-features --features custom-protocol
-
-    - name: Create AppImage manually
-      run: |
-        # Create AppImage structure manually to avoid linuxdeploy glibc issues
-        APP_NAME="Wishmaster Desktop"
-        APP_DIR="AppDir"
-        
-        # Create AppDir structure
-        mkdir -p "$APP_DIR/usr/bin"
-        mkdir -p "$APP_DIR/usr/share/applications"
-        mkdir -p "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
-        
-        # Copy binary
-        cp src-tauri/target/release/wishmaster-desktop "$APP_DIR/usr/bin/"
-        
-        # Create desktop file
-        cat > "$APP_DIR/usr/share/applications/wishmaster-desktop.desktop" << 'DESKTOP'
-        [Desktop Entry]
-        Name=Wishmaster Desktop
-        Exec=wishmaster-desktop
-        Icon=wishmaster-desktop
-        Type=Application
-        Categories=Utility;
-        Comment=Local AI Assistant with Voice Cloning
-        DESKTOP
-        
-        # Copy icon
-        cp src-tauri/icons/icon.png "$APP_DIR/usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png"
-        
-        # Create AppRun
-        cat > "$APP_DIR/AppRun" << 'APPRUN'
-        #!/bin/bash
-        HERE="$(dirname "$(readlink -f "${0}")")"
-        export PATH="${HERE}/usr/bin:${PATH}"
-        export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-        exec "${HERE}/usr/bin/wishmaster-desktop" "$@"
-        APPRUN
-        chmod +x "$APP_DIR/AppRun"
-        
-        # Create symlinks for AppImage
-        ln -sf usr/share/applications/wishmaster-desktop.desktop "$APP_DIR/wishmaster-desktop.desktop"
-        ln -sf usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png "$APP_DIR/wishmaster-desktop.png"
-        ln -sf usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png "$APP_DIR/.DirIcon"
-        
-        # Download appimagetool (static binary, no glibc issues)
-        wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
-        chmod +x appimagetool
-        
-        # Extract appimagetool (avoid FUSE issues in container)
-        ./appimagetool --appimage-extract
-        
-        # Create AppImage
-        mkdir -p src-tauri/target/release/bundle/appimage
-        ARCH=x86_64 ./squashfs-root/AppRun "$APP_DIR" "src-tauri/target/release/bundle/appimage/Wishmaster_Desktop_1.0.0_amd64.AppImage"
-        
-        echo "=== AppImage created ==="
-        ls -la src-tauri/target/release/bundle/appimage/
+        npx tauri build --bundles appimage -- --no-default-features --features custom-protocol
+      env:
+        # Disable strip to avoid .relr.dyn section errors with modern glibc
+        NO_STRIP: "true"
+        # Extract AppImage instead of mounting (works without FUSE)
+        APPIMAGE_EXTRACT_AND_RUN: "1"
+        # No signing for now
+        TAURI_SIGNING_PRIVATE_KEY: ""
 
     - name: List AppImage output
       run: |
         echo "=== AppImage directory ==="
-        find src-tauri/target/release/bundle -name "*.AppImage" 2>/dev/null | xargs ls -lh || echo "No AppImage found"
+        find src-tauri/target/release/bundle -type f -name "*.AppImage" 2>/dev/null | while read f; do ls -lh "$f"; done || echo "No AppImage found"
 
     - name: Upload Linux AppImage
       uses: actions/upload-artifact@v4
