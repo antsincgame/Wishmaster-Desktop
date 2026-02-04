@@ -1,5 +1,5 @@
-# Build Wishmaster Desktop for Linux (AppImage)
-name: Build Linux (AppImage)
+# Build Wishmaster Desktop for Linux (DEB, RPM, AppImage)
+name: Build Linux
 
 on:
   push:
@@ -13,9 +13,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-linux:
-    name: Build Linux AppImage
-    runs-on: ubuntu-20.04
+  # Job 1: Build DEB and RPM on Ubuntu 24.04 (native, fast)
+  build-linux-packages:
+    name: Build Linux DEB/RPM
+    runs-on: ubuntu-24.04
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -34,9 +35,7 @@ jobs:
           libayatana-appindicator3-dev \
           librsvg2-dev \
           libsqlite3-dev \
-          pkg-config \
-          libfuse2 \
-          patchelf
+          pkg-config
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -77,23 +76,13 @@ jobs:
       working-directory: src-tauri
       run: cargo check --features "custom-protocol"
 
-    - name: Build Tauri AppImage
-      run: npm run tauri:build
+    - name: Build Tauri DEB and RPM
+      run: npx tauri build --bundles deb,rpm
 
     - name: List build output
       run: |
-        echo "=== Release directory ==="
-        ls -lh src-tauri/target/release/wishmaster-desktop 2>/dev/null || echo "Binary not found"
-        echo ""
         echo "=== Bundle directory ==="
-        find src-tauri/target/release/bundle -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" 2>/dev/null | xargs ls -lh || echo "No bundles found"
-
-    - name: Upload Linux AppImage
-      uses: actions/upload-artifact@v4
-      with:
-        name: wishmaster-linux-appimage
-        path: src-tauri/target/release/bundle/appimage/*.AppImage
-        if-no-files-found: warn
+        find src-tauri/target/release/bundle -name "*.deb" -o -name "*.rpm" 2>/dev/null | xargs ls -lh || echo "No packages found"
 
     - name: Upload Linux DEB
       uses: actions/upload-artifact@v4
@@ -107,4 +96,71 @@ jobs:
       with:
         name: wishmaster-linux-rpm
         path: src-tauri/target/release/bundle/rpm/*.rpm
+        if-no-files-found: warn
+
+  # Job 2: Build AppImage using Docker with older Ubuntu for glibc compatibility
+  build-linux-appimage:
+    name: Build Linux AppImage
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:22.04
+      options: --privileged
+    steps:
+    - name: Install git and dependencies
+      run: |
+        apt-get update
+        apt-get install -y git curl wget sudo
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install system dependencies
+      run: |
+        apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          build-essential \
+          file \
+          libxdo-dev \
+          libssl-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          libsqlite3-dev \
+          pkg-config \
+          libfuse2 \
+          patchelf \
+          ca-certificates
+
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Install Node.js
+      run: |
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+
+    - name: Install npm dependencies
+      run: npm ci
+
+    - name: Build frontend
+      run: npm run build
+
+    - name: Build Tauri AppImage
+      run: |
+        export PATH="$HOME/.cargo/bin:$PATH"
+        npx tauri build --bundles appimage
+      env:
+        TAURI_SIGNING_PRIVATE_KEY: ""
+
+    - name: List AppImage output
+      run: |
+        echo "=== AppImage directory ==="
+        find src-tauri/target/release/bundle -name "*.AppImage" 2>/dev/null | xargs ls -lh || echo "No AppImage found"
+
+    - name: Upload Linux AppImage
+      uses: actions/upload-artifact@v4
+      with:
+        name: wishmaster-linux-appimage
+        path: src-tauri/target/release/bundle/appimage/*.AppImage
         if-no-files-found: warn
