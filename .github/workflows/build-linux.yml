@@ -151,47 +151,69 @@ jobs:
     - name: Build frontend
       run: npm run build
 
-    - name: Setup linuxdeploy for extraction mode
+    - name: Build Rust binary only
       run: |
-        # Download linuxdeploy and extract it to avoid FUSE/glibc issues
-        mkdir -p ~/.cache/tauri
-        
-        # Download linuxdeploy
-        wget -q "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage" \
-          -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage
-        chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
-        
-        # Extract linuxdeploy (avoids FUSE requirement)
-        cd ~/.cache/tauri
-        ./linuxdeploy-x86_64.AppImage --appimage-extract
-        
-        # Create wrapper script that uses extracted version
-        cat > linuxdeploy-wrapper << 'EOF'
-        #!/bin/bash
-        exec ~/.cache/tauri/squashfs-root/AppRun "$@"
-        EOF
-        chmod +x linuxdeploy-wrapper
-        
-        # Download and extract plugin-appimage
-        wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage" \
-          -O linuxdeploy-plugin-appimage-x86_64.AppImage
-        chmod +x linuxdeploy-plugin-appimage-x86_64.AppImage
-        ./linuxdeploy-plugin-appimage-x86_64.AppImage --appimage-extract
-        mv squashfs-root squashfs-root-plugin
-        
-        echo "linuxdeploy extracted successfully"
-        ls -la ~/.cache/tauri/
+        cd src-tauri
+        cargo build --release --no-default-features --features custom-protocol
 
-    - name: Build Tauri AppImage
+    - name: Create AppImage manually with linuxdeploy
       run: |
-        npx tauri build --bundles appimage -- --no-default-features --features custom-protocol
-      env:
-        # Disable strip to avoid .relr.dyn section errors with modern glibc
-        NO_STRIP: "true"
-        # Force linuxdeploy to extract instead of mount
-        APPIMAGE_EXTRACT_AND_RUN: "1"
-        # No signing for now
-        TAURI_SIGNING_PRIVATE_KEY: ""
+        set -e
+        
+        # Create AppDir structure
+        APP_DIR="AppDir"
+        mkdir -p "$APP_DIR/usr/bin"
+        mkdir -p "$APP_DIR/usr/lib"
+        mkdir -p "$APP_DIR/usr/share/applications"
+        mkdir -p "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
+        
+        # Copy binary
+        cp src-tauri/target/release/wishmaster-desktop "$APP_DIR/usr/bin/"
+        
+        # Copy desktop file
+        cp src-tauri/wishmaster.desktop "$APP_DIR/usr/share/applications/wishmaster-desktop.desktop"
+        
+        # Copy icon
+        cp src-tauri/icons/icon.png "$APP_DIR/usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png"
+        
+        # Create root symlinks for AppImage
+        ln -sf usr/share/applications/wishmaster-desktop.desktop "$APP_DIR/wishmaster-desktop.desktop"
+        ln -sf usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png "$APP_DIR/wishmaster-desktop.png"
+        ln -sf usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png "$APP_DIR/.DirIcon"
+        
+        # Download and extract linuxdeploy (avoid FUSE issues)
+        wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20240109-1/linuxdeploy-x86_64.AppImage" -O linuxdeploy
+        chmod +x linuxdeploy
+        ./linuxdeploy --appimage-extract
+        LINUXDEPLOY="./squashfs-root/AppRun"
+        
+        # Download GTK plugin
+        wget -q "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh" -O linuxdeploy-plugin-gtk.sh
+        chmod +x linuxdeploy-plugin-gtk.sh
+        
+        # Download and extract appimagetool
+        wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+        chmod +x appimagetool
+        ./appimagetool --appimage-extract
+        mv squashfs-root squashfs-root-appimagetool
+        
+        # Run linuxdeploy with GTK plugin to bundle dependencies
+        export DEPLOY_GTK_VERSION=3
+        export NO_STRIP=1
+        $LINUXDEPLOY \
+          --appdir "$APP_DIR" \
+          --executable "$APP_DIR/usr/bin/wishmaster-desktop" \
+          --desktop-file "$APP_DIR/usr/share/applications/wishmaster-desktop.desktop" \
+          --icon-file "$APP_DIR/usr/share/icons/hicolor/256x256/apps/wishmaster-desktop.png" \
+          --plugin gtk
+        
+        # Create final AppImage
+        mkdir -p src-tauri/target/release/bundle/appimage
+        ARCH=x86_64 ./squashfs-root-appimagetool/AppRun "$APP_DIR" \
+          "src-tauri/target/release/bundle/appimage/Wishmaster_Desktop_1.0.0_amd64.AppImage"
+        
+        echo "=== AppImage created ==="
+        ls -lh src-tauri/target/release/bundle/appimage/
 
     - name: List AppImage output
       run: |
