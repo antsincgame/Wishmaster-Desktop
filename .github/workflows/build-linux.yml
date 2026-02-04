@@ -34,7 +34,9 @@ jobs:
           libayatana-appindicator3-dev \
           librsvg2-dev \
           libsqlite3-dev \
-          pkg-config
+          pkg-config \
+          libfuse2 \
+          patchelf
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
