@@ -98,8 +98,9 @@ jobs:
         path: src-tauri/target/release/bundle/rpm/*.rpm
         if-no-files-found: warn
 
-  # Job 2: Build AppImage on Ubuntu 22.04 (native runner, no Docker)
-  # Ubuntu 22.04 provides glibc 2.35 - good compatibility with most Linux distros
+  # Job 2: Build AppImage on Ubuntu 22.04 (native runner)
+  # Ubuntu 22.04 is minimum for Tauri 2.x (requires libwebkit2gtk-4.1)
+  # glibc 2.35 provides good compatibility with most modern Linux distros
   build-linux-appimage:
     name: Build Linux AppImage
     runs-on: ubuntu-22.04
@@ -150,13 +151,44 @@ jobs:
     - name: Build frontend
       run: npm run build
 
+    - name: Setup linuxdeploy for extraction mode
+      run: |
+        # Download linuxdeploy and extract it to avoid FUSE/glibc issues
+        mkdir -p ~/.cache/tauri
+        
+        # Download linuxdeploy
+        wget -q "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage" \
+          -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+        chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+        
+        # Extract linuxdeploy (avoids FUSE requirement)
+        cd ~/.cache/tauri
+        ./linuxdeploy-x86_64.AppImage --appimage-extract
+        
+        # Create wrapper script that uses extracted version
+        cat > linuxdeploy-wrapper << 'EOF'
+        #!/bin/bash
+        exec ~/.cache/tauri/squashfs-root/AppRun "$@"
+        EOF
+        chmod +x linuxdeploy-wrapper
+        
+        # Download and extract plugin-appimage
+        wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage" \
+          -O linuxdeploy-plugin-appimage-x86_64.AppImage
+        chmod +x linuxdeploy-plugin-appimage-x86_64.AppImage
+        ./linuxdeploy-plugin-appimage-x86_64.AppImage --appimage-extract
+        mv squashfs-root squashfs-root-plugin
+        
+        echo "linuxdeploy extracted successfully"
+        ls -la ~/.cache/tauri/
+
     - name: Build Tauri AppImage
       run: |
         npx tauri build --bundles appimage -- --no-default-features --features custom-protocol
       env:
         # Disable strip to avoid .relr.dyn section errors with modern glibc
         NO_STRIP: "true"
-        # Extract AppImage instead of mounting (works without FUSE)
+        # Force linuxdeploy to extract instead of mount
         APPIMAGE_EXTRACT_AND_RUN: "1"
         # No signing for now
         TAURI_SIGNING_PRIVATE_KEY: ""
