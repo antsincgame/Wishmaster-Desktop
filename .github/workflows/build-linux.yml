@@ -130,7 +130,8 @@ jobs:
           patchelf \
           ca-certificates \
           libclang-dev \
-          clang
+          clang \
+          cmake
 
     - name: Install Rust
       run: |
