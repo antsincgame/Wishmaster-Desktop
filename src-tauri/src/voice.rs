@@ -54,7 +54,7 @@ fn detect_tts_engine() -> TtsEngine {
             return TtsEngine::EspeakNg;
         }
         // SAPI is always available on Windows
-        return TtsEngine::WindowsSapi;
+        TtsEngine::WindowsSapi
     }
     
     #[cfg(target_os = "linux")]
@@ -78,10 +78,15 @@ fn detect_tts_engine() -> TtsEngine {
         if Command::new("festival").arg("--version").output().is_ok() {
             return TtsEngine::Festival;
         }
+        
+        // Default to espeak-ng
+        TtsEngine::EspeakNg
     }
     
-    // Default to espeak-ng
-    TtsEngine::EspeakNg
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        TtsEngine::EspeakNg
+    }
 }
 
 /// Start recording user's voice

@@ -57,7 +57,7 @@ pub fn init_embedder() -> Result<(), String> {
 
 /// Generate embedding for search query (use "query:" prefix)
 pub fn embed_query(text: &str) -> Result<Vec<f32>, String> {
-    let embedder = EMBEDDER.get()
+    let mut embedder = EMBEDDER.get()
         .ok_or("Embedder not initialized")?
         .lock()
         .map_err(|e| format!("Failed to lock embedder: {}", e))?;
@@ -74,7 +74,7 @@ pub fn embed_query(text: &str) -> Result<Vec<f32>, String> {
 
 /// Generate embedding for document/passage (use "passage:" prefix)
 pub fn embed_passage(text: &str) -> Result<Vec<f32>, String> {
-    let embedder = EMBEDDER.get()
+    let mut embedder = EMBEDDER.get()
         .ok_or("Embedder not initialized")?
         .lock()
         .map_err(|e| format!("Failed to lock embedder: {}", e))?;
@@ -92,7 +92,7 @@ pub fn embed_passage(text: &str) -> Result<Vec<f32>, String> {
 /// Generate embeddings for multiple passages (batch indexing)
 #[allow(dead_code)]
 pub fn embed_passages_batch(texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
-    let embedder = EMBEDDER.get()
+    let mut embedder = EMBEDDER.get()
         .ok_or("Embedder not initialized")?
         .lock()
         .map_err(|e| format!("Failed to lock embedder: {}", e))?;
@@ -162,8 +162,8 @@ pub fn semantic_search(
         )?
     };
 
-    let rows: Vec<(i64, String, i64, Vec<u8>)> = if source_type.is_some() {
-        stmt.query_map(params![source_type.unwrap()], |row| {
+    let rows: Vec<(i64, String, i64, Vec<u8>)> = if let Some(st) = source_type {
+        stmt.query_map(params![st], |row| {
             Ok((
                 row.get(0)?,
                 row.get(1)?,
@@ -171,6 +171,8 @@ pub fn semantic_search(
                 row.get(3)?,
             ))
         })?
+        .filter_map(|r| r.ok())
+        .collect()
     } else {
         stmt.query_map([], |row| {
             Ok((
@@ -180,7 +182,9 @@ pub fn semantic_search(
                 row.get(3)?,
             ))
         })?
-    }.filter_map(|r| r.ok()).collect();
+        .filter_map(|r| r.ok())
+        .collect()
+    };
 
     // Calculate similarities
     let mut results: Vec<(i64, String, i64, f32)> = rows
@@ -221,9 +225,10 @@ pub fn get_embedding_stats(conn: &Connection) -> Result<serde_json::Value> {
         let mut stmt = conn.prepare(
             "SELECT source_type, COUNT(*) FROM embeddings GROUP BY source_type"
         )?;
-        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .filter_map(|r| r.ok())
-            .collect()
+            .collect();
+        rows
     };
 
     Ok(serde_json::json!({
