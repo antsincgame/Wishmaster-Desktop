@@ -85,6 +85,12 @@ function parseVersion(versionString) {
   const cleaned = versionString.replace(/^[\^~>=<]+/, '');
   
   const parts = cleaned.split('.');
+  
+  // Если указана только мажорная версия (например "2"), считаем что minor=0
+  if (parts.length === 1) {
+    return { major: parseInt(parts[0]) || 0, minor: 0, patch: 0, flexible: true };
+  }
+  
   if (parts.length < 2) {
     return { major: parseInt(parts[0]) || 0, minor: 0, patch: 0 };
   }
@@ -93,12 +99,19 @@ function parseVersion(versionString) {
     major: parseInt(parts[0]) || 0,
     minor: parseInt(parts[1]) || 0,
     patch: parseInt(parts[2]) || 0,
+    flexible: false,
   };
 }
 
 // Сравниваем major.minor версии
 function isCompatible(v1, v2) {
   if (!v1 || !v2) return false;
+  
+  // Если одна из версий "flexible" (только мажорная указана), проверяем только major
+  if (v1.flexible || v2.flexible) {
+    return v1.major === v2.major;
+  }
+  
   return v1.major === v2.major && v1.minor === v2.minor;
 }
 
