@@ -26,9 +26,9 @@ shellexpand = "3"  # Shell path expansion (~, $VAR)
 # LLM - native llama.cpp bindings (CPU by default, CUDA optional)
 llama-cpp-2 = "0.1"
 
-# Embeddings for semantic search / RAG
+# Embeddings for semantic search / RAG (optional - requires glibc 2.38+)
 # Using latest fastembed with native TLS for ort downloads
-fastembed = { version = "5", default-features = false, features = ["ort-download-binaries", "hf-hub-native-tls"] }
+fastembed = { version = "5", default-features = false, features = ["ort-download-binaries", "hf-hub-native-tls"], optional = true }
 
 # Audio - placeholder (add cpal + hound later for voice features)
 # cpal = "0.15"
@@ -41,8 +41,11 @@ fastembed = { version = "5", default-features = false, features = ["ort-download
 # ort = "2.0"
 
 [features]
-default = ["custom-protocol"]
+default = ["custom-protocol", "embeddings"]
 custom-protocol = ["tauri/custom-protocol"]
+
+# Embeddings for semantic search / RAG (requires glibc 2.38+ / Ubuntu 24.04+)
+embeddings = ["dep:fastembed"]
 
 # CUDA acceleration (requires CUDA toolkit)
 cuda = ["llama-cpp-2/cuda"]

@@ -152,7 +152,9 @@ jobs:
     - name: Build Tauri AppImage
       run: |
         export PATH="$HOME/.cargo/bin:$PATH"
-        npx tauri build --bundles appimage
+        # Build without embeddings feature for glibc 2.35 compatibility
+        cd src-tauri && cargo build --release --no-default-features --features custom-protocol
+        cd .. && npx tauri build --bundles appimage -- --no-default-features --features custom-protocol
       env:
         TAURI_SIGNING_PRIVATE_KEY: ""
 

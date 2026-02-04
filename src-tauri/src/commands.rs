@@ -4,6 +4,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::database;
+#[cfg(feature = "embeddings")]
 use crate::embeddings;
 use crate::llm;
 use crate::voice;
@@ -200,18 +201,21 @@ pub fn save_message(session_id: i64, content: String, is_user: bool) -> Result<i
     let msg_id = database::insert_message(session_id, &content, is_user).map_err(|e| e.to_string())?;
     
     // Auto-index message for semantic search (async, non-blocking)
-    let content_clone = content.clone();
-    std::thread::spawn(move || {
-        let result = database::with_connection(|conn| {
-            embeddings::index_message(conn, msg_id, &content_clone)
+    #[cfg(feature = "embeddings")]
+    {
+        let content_clone = content.clone();
+        std::thread::spawn(move || {
+            let result = database::with_connection(|conn| {
+                embeddings::index_message(conn, msg_id, &content_clone)
+            });
+            
+            match result {
+                Ok(Ok(())) => {} // Success
+                Ok(Err(e)) => eprintln!("Failed to index message {}: {}", msg_id, e),
+                Err(e) => eprintln!("Database error indexing message {}: {}", msg_id, e),
+            }
         });
-        
-        match result {
-            Ok(Ok(())) => {} // Success
-            Ok(Err(e)) => eprintln!("Failed to index message {}: {}", msg_id, e),
-            Err(e) => eprintln!("Database error indexing message {}: {}", msg_id, e),
-        }
-    });
+    }
     
     Ok(msg_id)
 }
@@ -455,6 +459,7 @@ pub async fn generate(
     }
     
     // Add relevant context using SEMANTIC SEARCH (RAG)
+    #[cfg(feature = "embeddings")]
     if let Ok(rag_results) = database::with_connection(|conn| {
         embeddings::find_rag_context(conn, &prompt, 5)
     }) {
@@ -641,10 +646,21 @@ pub fn create_voice_profile_from_recording(recording_id: i64, name: String) -> R
 
 // ==================== SEMANTIC SEARCH Commands (RAG) ====================
 
+/// Search result type for RAG (used when embeddings feature is disabled)
+#[cfg(not(feature = "embeddings"))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    pub source_type: String,
+    pub source_id: i64,
+    pub content: String,
+    pub similarity: f32,
+}
+
 /// Find relevant context for RAG using semantic search
+#[cfg(feature = "embeddings")]
 #[tauri::command]
 pub fn find_rag_context(query: String, limit: i32) -> Result<Vec<embeddings::SearchResult>, String> {
-    // Get database connection through a helper
     let results = database::with_connection(|conn| {
         embeddings::find_rag_context(conn, &query, limit)
     }).map_err(|e| e.to_string())??;
@@ -652,7 +668,16 @@ pub fn find_rag_context(query: String, limit: i32) -> Result<Vec<embeddings::Sea
     Ok(results)
 }
 
+/// Find relevant context - stub when embeddings disabled
+#[cfg(not(feature = "embeddings"))]
+#[tauri::command]
+pub fn find_rag_context(_query: String, _limit: i32) -> Result<Vec<SearchResult>, String> {
+    // Return empty results when embeddings feature is disabled
+    Ok(vec![])
+}
+
 /// Index all existing messages for semantic search
+#[cfg(feature = "embeddings")]
 #[tauri::command]
 pub async fn index_all_messages() -> Result<i32, String> {
     let messages = database::get_all_messages_for_indexing()
@@ -673,12 +698,30 @@ pub async fn index_all_messages() -> Result<i32, String> {
     Ok(indexed)
 }
 
+/// Index all messages - stub when embeddings disabled
+#[cfg(not(feature = "embeddings"))]
+#[tauri::command]
+pub async fn index_all_messages() -> Result<i32, String> {
+    Err("Semantic search is disabled in this build (no embeddings feature)".to_string())
+}
+
 /// Get embedding statistics
+#[cfg(feature = "embeddings")]
 #[tauri::command]
 pub fn get_embedding_stats() -> Result<serde_json::Value, String> {
     database::with_connection(|conn| {
         embeddings::get_embedding_stats(conn).map_err(|e| e.to_string())
     }).map_err(|e| e.to_string())?
+}
+
+/// Get embedding stats - stub when embeddings disabled
+#[cfg(not(feature = "embeddings"))]
+#[tauri::command]
+pub fn get_embedding_stats() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "status": "disabled",
+        "message": "Semantic search is disabled in this build"
+    }))
 }
 
 // ==================== TESTS ====================

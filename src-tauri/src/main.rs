@@ -3,6 +3,7 @@
 
 mod commands;
 mod database;
+#[cfg(feature = "embeddings")]
 mod embeddings;
 mod errors;
 mod llm;
@@ -46,6 +47,7 @@ fn main() {
             voice::init();
             
             // Initialize embedding model (async, non-blocking)
+            #[cfg(feature = "embeddings")]
             std::thread::spawn(|| {
                 if let Err(e) = embeddings::init_embedder() {
                     eprintln!("Warning: Failed to initialize embeddings: {}", e);
@@ -56,7 +58,10 @@ fn main() {
             
             println!("🧞 Wishmaster Desktop started!");
             println!("📚 Memory system active - all conversations will be remembered");
+            #[cfg(feature = "embeddings")]
             println!("🔍 RAG/Vector search enabled");
+            #[cfg(not(feature = "embeddings"))]
+            println!("⚠️ Semantic search disabled (build without embeddings feature)");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
