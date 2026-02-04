@@ -26,8 +26,8 @@ jobs:
       with:
         cuda: '12.4.0'
         method: 'network'
-        # Full CUDA for llama.cpp compilation + NVML for GPU info
-        sub-packages: '["nvcc", "cudart", "cudart_dev", "cublas", "cublas_dev", "nvml", "nvml_dev"]'
+        # CUDA for llama.cpp compilation (nvml-wrapper uses runtime loading, no build deps needed)
+        sub-packages: '["nvcc", "cudart", "cudart_dev", "cublas", "cublas_dev"]'
 
     - name: Show CUDA info
       run: |
