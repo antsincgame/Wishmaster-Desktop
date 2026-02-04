@@ -185,7 +185,8 @@ jobs:
         wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20240109-1/linuxdeploy-x86_64.AppImage" -O linuxdeploy
         chmod +x linuxdeploy
         ./linuxdeploy --appimage-extract
-        LINUXDEPLOY="./squashfs-root/AppRun"
+        mv squashfs-root squashfs-root-linuxdeploy
+        LINUXDEPLOY="./squashfs-root-linuxdeploy/AppRun"
         
         # Download GTK plugin
         wget -q "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh" -O linuxdeploy-plugin-gtk.sh
