@@ -23,10 +23,12 @@ base64 = "0.21"
 thiserror = "1.0"  # Custom error types
 
 # LLM - native llama.cpp bindings (CPU by default, CUDA optional)
-llama-cpp-2 = "0.1"
+# Pin to 0.1.80 for stable API (newer versions changed sampling methods)
+llama-cpp-2 = "=0.1.80"
 
 # Embeddings for semantic search / RAG
-fastembed = "4"
+# Pin to 3.x for stable InitOptions API
+fastembed = "3"
 
 # Audio - placeholder (add cpal + hound later for voice features)
 # cpal = "0.15"

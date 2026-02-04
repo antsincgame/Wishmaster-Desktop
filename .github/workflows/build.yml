@@ -63,13 +63,14 @@ jobs:
     - name: TypeScript type check
       run: npm run typecheck
 
+    # ==================== BUILD STAGE ====================
+    # Build frontend FIRST (Tauri needs dist/ folder for cargo check)
+    - name: Build frontend
+      run: npm run build
+
     - name: Rust syntax check
       working-directory: src-tauri
       run: cargo check --features "custom-protocol"
-
-    # ==================== BUILD STAGE ====================
-    - name: Build frontend
-      run: npm run build
 
     - name: Build Rust (CPU only for now)
       working-directory: src-tauri
