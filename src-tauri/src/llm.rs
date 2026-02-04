@@ -278,7 +278,7 @@ where
         }
         
         // Convert token to string
-        let token_str = model.token_to_piece(new_token, llama_cpp_2::model::Special::Tokenize)
+        let token_str = model.token_to_str(new_token, llama_cpp_2::model::Special::Tokenize)
             .map_err(|e| format!("Token to string error: {:?}", e))?;
         
         accumulated.push_str(&token_str);

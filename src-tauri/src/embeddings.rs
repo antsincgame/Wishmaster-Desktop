@@ -38,11 +38,10 @@ pub fn init_embedder() -> Result<(), String> {
 
     println!("Loading embedding model (multilingual-e5-small)...");
     
-    let model = TextEmbedding::try_new(InitOptions {
-        model_name: EmbeddingModel::MultilingualE5Small,
-        show_download_progress: true,
-        ..Default::default()
-    }).map_err(|e| format!("Failed to load embedding model: {}", e))?;
+    let model = TextEmbedding::try_new(
+        InitOptions::new(EmbeddingModel::MultilingualE5Small)
+            .with_show_download_progress(true)
+    ).map_err(|e| format!("Failed to load embedding model: {}", e))?;
 
     EMBEDDER.set(Mutex::new(model))
         .map_err(|_| "Embedder already initialized".to_string())?;
