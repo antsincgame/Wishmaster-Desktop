@@ -98,13 +98,16 @@ jobs:
         path: src-tauri/target/release/bundle/rpm/*.rpm
         if-no-files-found: warn
 
-  # Job 2: Build AppImage using Docker with older Ubuntu for glibc compatibility
+  # Job 2: Build AppImage using Docker with Ubuntu 22.04
+  # Use custom linuxdeploy build for glibc compatibility
   build-linux-appimage:
     name: Build Linux AppImage
     runs-on: ubuntu-24.04
     container:
       image: ubuntu:22.04
       options: --privileged
+      env:
+        DEBIAN_FRONTEND: noninteractive
     steps:
     - name: Install git and dependencies
       run: |
@@ -131,7 +134,8 @@ jobs:
           ca-certificates \
           libclang-dev \
           clang \
-          cmake
+          cmake \
+          squashfs-tools
 
     - name: Install Rust
       run: |
@@ -149,6 +153,20 @@ jobs:
     - name: Build frontend
       run: npm run build
 
+    - name: Download compatible linuxdeploy
+      run: |
+        # Download older linuxdeploy binaries that work with glibc 2.35
+        mkdir -p ~/.cache/tauri
+        # Use linuxdeploy from 2022 which is compatible with Ubuntu 22.04
+        wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20220822-1/linuxdeploy-x86_64.AppImage" \
+          -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+        chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+        # Download plugin-appimage
+        wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20230713-1/linuxdeploy-plugin-appimage-x86_64.AppImage" \
+          -O ~/.cache/tauri/linuxdeploy-plugin-appimage-x86_64.AppImage
+        chmod +x ~/.cache/tauri/linuxdeploy-plugin-appimage-x86_64.AppImage
+        ls -la ~/.cache/tauri/
+
     - name: Build Tauri AppImage
       run: |
         export PATH="$HOME/.cargo/bin:$PATH"
@@ -157,6 +175,8 @@ jobs:
         cd .. && npx tauri build --bundles appimage -- --no-default-features --features custom-protocol
       env:
         TAURI_SIGNING_PRIVATE_KEY: ""
+        # Use pre-downloaded linuxdeploy
+        LINUXDEPLOY: ~/.cache/tauri/linuxdeploy-x86_64.AppImage
 
     - name: List AppImage output
       run: |
