@@ -48,6 +48,7 @@ interface AppState {
   
   // GPU
   gpuInfo: GpuInfo | null
+  gpuInfoLoading: boolean
   
   // Voice
   voiceProfiles: VoiceProfile[]
@@ -131,6 +132,7 @@ export const useStore = create<AppState>((set, get) => ({
   currentModel: null,
   isModelLoading: false,
   gpuInfo: null,
+  gpuInfoLoading: false,
   voiceProfiles: [],
   currentVoice: null,
   isRecording: false,
@@ -195,13 +197,17 @@ export const useStore = create<AppState>((set, get) => ({
   },
   
   loadGpuInfo: async () => {
+    set({ gpuInfoLoading: true })
     try {
       const gpuInfo = await invoke<GpuInfo>('get_gpu_info')
       console.log('GPU Info:', gpuInfo)
-      set({ gpuInfo })
+      set({ gpuInfo, gpuInfoLoading: false })
     } catch (e) {
       console.error('Failed to load GPU info:', e)
-      set({ gpuInfo: { available: false, backend: 'CPU', deviceName: 'N/A', vramTotalMb: 0, vramFreeMb: 0 } })
+      set({
+        gpuInfo: { available: false, backend: 'CPU', deviceName: 'N/A', vramTotalMb: 0, vramFreeMb: 0 },
+        gpuInfoLoading: false,
+      })
     }
   },
 

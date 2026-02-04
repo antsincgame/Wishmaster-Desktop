@@ -17,6 +17,8 @@ static MODEL_PATH: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 static CONTEXT_SIZE: OnceCell<Mutex<u32>> = OnceCell::new();
 static GPU_AVAILABLE: OnceCell<bool> = OnceCell::new();
 static SEED_COUNTER: AtomicU32 = AtomicU32::new(42);
+/// Serializes model load/unload so only one load runs at a time (prevents crash when loading multiple models).
+static LOAD_MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +37,17 @@ const STOP_SEQUENCES: &[&str] = &[
     "</s>",
     "<|endoftext|>",
 ];
+
+/// Default CPU threads when detection fails
+const DEFAULT_CPU_THREADS: i32 = 4;
+
+/// Get number of CPU threads for inference (uses all available cores when on CPU)
+fn cpu_thread_count() -> i32 {
+    std::thread::available_parallelism()
+        .map(|p| p.get() as i32)
+        .unwrap_or(DEFAULT_CPU_THREADS)
+        .max(1)
+}
 
 /// Get next seed for random sampling (simple incrementing counter)
 fn next_seed() -> u32 {
@@ -75,37 +88,61 @@ pub fn init() {
     let _ = MODEL_PATH.set(Mutex::new(None));
     let _ = CONTEXT_SIZE.set(Mutex::new(2048));
     
-    // Check GPU support
+    // Real CUDA detection: llama.cpp llama_supports_gpu_offload() (build with feature "cuda" + NVIDIA runtime)
     let gpu_supported = backend.supports_gpu_offload();
     let _ = GPU_AVAILABLE.set(gpu_supported);
     
+    let n_threads = cpu_thread_count();
     println!("╔══════════════════════════════════════════╗");
     println!("║     WISHMASTER LLM ENGINE INIT           ║");
     println!("╠══════════════════════════════════════════╣");
     println!("║ Backend: llama.cpp (native)              ║");
+    println!("║ CPU threads: {} (multi-core)              ║", n_threads);
     if gpu_supported {
         println!("║ GPU: ✅ CUDA AVAILABLE                   ║");
         println!("║ Mode: GPU Accelerated                    ║");
     } else {
         println!("║ GPU: ❌ CPU ONLY                         ║");
-        println!("║ Mode: CPU (slower)                       ║");
+        println!("║ Mode: CPU ({} threads)                   ║", n_threads);
     }
     println!("╚══════════════════════════════════════════╝");
     
     let _ = backend;
 }
 
-/// Get GPU/CUDA information
+/// Optional: query real GPU name and VRAM via NVML (when feature "nvml-wrapper" is enabled).
+#[cfg(feature = "nvml-wrapper")]
+fn query_nvml_gpu_info() -> Option<(String, u64, u64)> {
+    use once_cell::sync::OnceCell;
+    static NVML: OnceCell<Option<nvml_wrapper::Nvml>> = OnceCell::new();
+    let nvml = NVML.get_or_init(|| nvml_wrapper::Nvml::init().ok());
+    let nvml = nvml.as_ref()?;
+    let device = nvml.device_by_index(0).ok()?;
+    let name = device.name().ok()?.trim().to_string();
+    let mem = device.memory_info().ok()?;
+    let total_mb = mem.total / (1024 * 1024);
+    let free_mb = mem.free / (1024 * 1024);
+    Some((if name.is_empty() { "NVIDIA GPU".to_string() } else { name }, total_mb, free_mb))
+}
+
+#[cfg(not(feature = "nvml-wrapper"))]
+fn query_nvml_gpu_info() -> Option<(String, u64, u64)> {
+    None
+}
+
+/// Get GPU/CUDA information (device name and VRAM from NVML when available).
 pub fn get_gpu_info() -> GpuInfo {
     let available = GPU_AVAILABLE.get().copied().unwrap_or(false);
-    
+
     if available {
+        let (device_name, vram_total_mb, vram_free_mb) =
+            query_nvml_gpu_info().unwrap_or(("NVIDIA GPU".to_string(), 0, 0));
         GpuInfo {
             available: true,
             backend: "CUDA".to_string(),
-            device_name: "NVIDIA GPU".to_string(), // Generic name
-            vram_total_mb: 0, // Would need unsafe FFI to get real values
-            vram_free_mb: 0,
+            device_name,
+            vram_total_mb,
+            vram_free_mb,
         }
     } else {
         GpuInfo {
@@ -124,6 +161,10 @@ pub fn is_gpu_available() -> bool {
 }
 
 pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
+    let _load_guard = LOAD_MODEL_LOCK
+        .lock()
+        .map_err(|e| format!("Load model lock poisoned: {}", e))?;
+
     let gpu_available = is_gpu_available();
 
     // Unload current model first to avoid GPU/memory conflicts when switching models
@@ -228,12 +269,15 @@ where
         .map(|g| *g)
         .unwrap_or(2048);
     
-    println!("Generating: {} chars, temp={}, max_tokens={}, ctx={}", 
-             prompt.len(), temperature, max_tokens, ctx_size);
+    let n_threads = cpu_thread_count();
+    println!("Generating: {} chars, temp={}, max_tokens={}, ctx={}, threads={}",
+             prompt.len(), temperature, max_tokens, ctx_size, n_threads);
     
-    // Create context with basic params
+    // Create context with multi-threaded CPU inference
     let ctx_params = LlamaContextParams::default()
-        .with_n_ctx(NonZeroU32::new(ctx_size));
+        .with_n_ctx(NonZeroU32::new(ctx_size))
+        .with_n_threads(n_threads)
+        .with_n_threads_batch(n_threads);
     
     let mut ctx = model.new_context(&BACKEND.get().unwrap(), ctx_params)
         .map_err(|e| format!("Failed to create context: {:?}", e))?;

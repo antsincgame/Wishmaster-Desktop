@@ -168,7 +168,12 @@ pub fn remove_model_path(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn load_model(path: String, context_length: i32) -> Result<(), String> {
-    llm::load_model(&path, context_length as usize).map_err(|e| e.to_string())
+    let path = path;
+    let context_length = context_length as usize;
+    tauri::async_runtime::spawn_blocking(move || llm::load_model(&path, context_length))
+        .await
+        .map_err(|e| format!("Load model task join error: {}", e))?
+        .map_err(|e| e)
 }
 
 #[tauri::command]

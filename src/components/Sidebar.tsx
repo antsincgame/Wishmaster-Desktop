@@ -31,7 +31,8 @@ export function Sidebar() {
     selectSession,
     deleteSession,
     currentModel,
-    gpuInfo
+    gpuInfo,
+    gpuInfoLoading
   } = useStore()
 
   return (
@@ -116,20 +117,34 @@ export function Sidebar() {
 
       {/* Model & GPU status */}
       <div className="p-3 border-t border-cyber-border space-y-2">
-        {/* GPU Status */}
-        <div className="flex items-center gap-2">
-          {gpuInfo?.available ? (
-            <>
-              <Zap size={14} className="text-neon-green" />
-              <span className="text-xs text-neon-green font-medium">CUDA</span>
-              <div className="w-2 h-2 rounded-full bg-neon-green animate-pulse" />
-            </>
-          ) : (
-            <>
-              <Cpu size={14} className="text-yellow-500" />
-              <span className="text-xs text-yellow-500 font-medium">CPU</span>
-              <div className="w-2 h-2 rounded-full bg-yellow-500" />
-            </>
+        {/* GPU/CUDA Status — device name and VRAM from NVML when available */}
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <div className="flex items-center gap-2 min-w-0" title={gpuInfo?.available ? `CUDA · ${gpuInfo.deviceName}${gpuInfo.vramTotalMb ? ` · ${(gpuInfo.vramFreeMb / 1024).toFixed(1)} / ${(gpuInfo.vramTotalMb / 1024).toFixed(1)} GB` : ''}` : 'Режим CPU'}>
+            {gpuInfoLoading ? (
+              <>
+                <div className="w-3 h-3 rounded-full border-2 border-neon-cyan border-t-transparent animate-spin shrink-0" />
+                <span className="text-xs text-gray-500">Проверка GPU…</span>
+              </>
+            ) : gpuInfo?.available ? (
+              <>
+                <Zap size={14} className="text-neon-green shrink-0" />
+                <span className="text-xs text-neon-green font-medium truncate">
+                  CUDA{gpuInfo.deviceName && gpuInfo.deviceName !== 'NVIDIA GPU' ? ` · ${gpuInfo.deviceName}` : ''}
+                </span>
+                <div className="w-2 h-2 rounded-full bg-neon-green animate-pulse shrink-0" aria-hidden />
+              </>
+            ) : (
+              <>
+                <Cpu size={14} className="text-yellow-500 shrink-0" />
+                <span className="text-xs text-yellow-500 font-medium">CPU</span>
+                <div className="w-2 h-2 rounded-full bg-yellow-500 shrink-0" aria-hidden />
+              </>
+            )}
+          </div>
+          {gpuInfo?.available && gpuInfo.vramTotalMb > 0 && (
+            <div className="text-[10px] text-gray-500 truncate pl-6" title={`Свободно: ${(gpuInfo.vramFreeMb / 1024).toFixed(1)} GB / Всего: ${(gpuInfo.vramTotalMb / 1024).toFixed(1)} GB`}>
+              VRAM: {(gpuInfo.vramFreeMb / 1024).toFixed(1)} / {(gpuInfo.vramTotalMb / 1024).toFixed(1)} GB
+            </div>
           )}
         </div>
         

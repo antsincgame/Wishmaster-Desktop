@@ -95,6 +95,11 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget \
 
 Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with "Desktop development with C++".
 
+## 🖥️ CUDA / GPU
+
+- **Indicator:** The sidebar shows **CUDA** (green) or **CPU** (yellow). Status comes from `llama.cpp`’s `llama_supports_gpu_offload()` at startup (real detection when built with the `cuda` feature and NVIDIA drivers).
+- **One model at a time:** Only one model is loaded at a time; switching models unloads the current one first. Concurrent load requests are serialized to avoid crashes.
+
 ## 🧠 Memory System
 
 Wishmaster features a sophisticated memory system:

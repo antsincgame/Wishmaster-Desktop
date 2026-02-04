@@ -40,6 +40,7 @@ describe('Sidebar Logic', () => {
       deleteSession: mockDeleteSession,
       currentModel: null,
       gpuInfo: null,
+      gpuInfoLoading: false,
     });
     vi.clearAllMocks();
   });
