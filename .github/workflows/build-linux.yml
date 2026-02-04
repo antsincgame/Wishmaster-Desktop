@@ -1,0 +1,108 @@
+# Build Wishmaster Desktop for Linux (AppImage)
+name: Build Linux (AppImage)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    name: Build Linux AppImage
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          build-essential \
+          curl \
+          wget \
+          file \
+          libxdo-dev \
+          libssl-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          libsqlite3-dev \
+          pkg-config
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+        cache-on-failure: true
+
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install npm dependencies
+      run: npm ci
+
+    # ==================== VALIDATION STAGE ====================
+    - name: Check Tauri versions sync
+      run: npm run check:tauri-versions
+
+    - name: Validate configuration
+      run: npm run validate
+
+    - name: TypeScript type check
+      run: npm run typecheck
+
+    - name: Run frontend tests
+      run: npm test
+
+    # ==================== BUILD STAGE ====================
+    - name: Build frontend
+      run: npm run build
+
+    - name: Rust syntax check
+      working-directory: src-tauri
+      run: cargo check --features "custom-protocol"
+
+    - name: Build Tauri AppImage
+      run: npm run tauri:build
+
+    - name: List build output
+      run: |
+        echo "=== Release directory ==="
+        ls -lh src-tauri/target/release/wishmaster-desktop 2>/dev/null || echo "Binary not found"
+        echo ""
+        echo "=== Bundle directory ==="
+        find src-tauri/target/release/bundle -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" 2>/dev/null | xargs ls -lh || echo "No bundles found"
+
+    - name: Upload Linux AppImage
+      uses: actions/upload-artifact@v4
+      with:
+        name: wishmaster-linux-appimage
+        path: src-tauri/target/release/bundle/appimage/*.AppImage
+        if-no-files-found: warn
+
+    - name: Upload Linux DEB
+      uses: actions/upload-artifact@v4
+      with:
+        name: wishmaster-linux-deb
+        path: src-tauri/target/release/bundle/deb/*.deb
+        if-no-files-found: warn
+
+    - name: Upload Linux RPM
+      uses: actions/upload-artifact@v4
+      with:
+        name: wishmaster-linux-rpm
+        path: src-tauri/target/release/bundle/rpm/*.rpm
+        if-no-files-found: warn
