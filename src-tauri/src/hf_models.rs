@@ -90,7 +90,7 @@ impl ProgressTracker {
     }
 }
 
-impl hf_hub::api::sync::Progress for ProgressTracker {
+impl hf_hub::api::Progress for ProgressTracker {
     fn init(&mut self, size: usize, _filename: &str) {
         self.state.total.store(size as u64, Ordering::SeqCst);
         self.state.downloaded.store(0, Ordering::SeqCst);
@@ -176,16 +176,16 @@ pub fn list_gguf_files(repo_id: &str) -> Result<Vec<HfModelFile>, String> {
     let info = api_repo.info()
         .map_err(|e| format!("Failed to get repo info: {:?}", e))?;
     
-    // Filter for GGUF files
+    // Filter for GGUF files (hf-hub 0.4 Siblings only has rfilename, no size in API)
     let gguf_files: Vec<HfModelFile> = info.siblings
         .into_iter()
         .filter(|f| f.rfilename.to_lowercase().ends_with(".gguf"))
         .map(|f| {
-            let size = f.size.unwrap_or(0) as u64;
+            let size = 0u64;
             HfModelFile {
                 filename: f.rfilename.clone(),
                 size,
-                size_formatted: format_size(size),
+                size_formatted: "—".to_string(),
                 quant_type: extract_quant_type(&f.rfilename),
             }
         })

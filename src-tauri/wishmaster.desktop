@@ -1,10 +1,11 @@
 [Desktop Entry]
 Name=Wishmaster Desktop
-Comment=Local AI Assistant with Memory
+GenericName=Local AI Assistant
+Comment=Local AI assistant with voice cloning, memory and CUDA support
 Exec=wishmaster-desktop
 Icon=wishmaster-desktop
 Terminal=false
 Type=Application
-Categories=Utility;
-Keywords=AI;LLM;Chat;Assistant;
+Categories=Utility;Development;Science;ArtificialIntelligence;
+Keywords=AI;LLM;Chat;Assistant;Voice;Local;CUDA;
 StartupWMClass=wishmaster-desktop

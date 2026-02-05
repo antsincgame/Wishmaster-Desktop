@@ -252,6 +252,10 @@ pub fn get_settings() -> Result<Settings> {
             "ttsEnabled" => settings.tts_enabled = value == "true",
             "modelPaths" => settings.model_paths = serde_json::from_str(&value).unwrap_or_default(),
             "systemPrompt" => settings.system_prompt = value,
+            "llmBackend" => settings.llm_backend = value,
+            "ollamaBaseUrl" => settings.ollama_base_url = value,
+            "ollamaModel" => settings.ollama_model = value,
+            "customLlmUrl" => settings.custom_llm_url = value,
             _ => {}
         }
     }
@@ -274,6 +278,10 @@ pub fn save_settings(settings: &Settings) -> Result<()> {
         ("ttsEnabled", settings.tts_enabled.to_string()),
         ("modelPaths", model_paths_json),
         ("systemPrompt", settings.system_prompt.clone()),
+        ("llmBackend", settings.llm_backend.clone()),
+        ("ollamaBaseUrl", settings.ollama_base_url.clone()),
+        ("ollamaModel", settings.ollama_model.clone()),
+        ("customLlmUrl", settings.custom_llm_url.clone()),
     ];
     
     for (key, value) in pairs {

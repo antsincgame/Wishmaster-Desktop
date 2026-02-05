@@ -23,9 +23,14 @@ base64 = "0.21"
 thiserror = "1.0"  # Custom error types
 shellexpand = "3"  # Shell path expansion (~, $VAR)
 chrono = "0.4"     # Timestamps for logging
+encoding_rs = "0.8" # UTF-8 decoder for token_to_piece (llama-cpp-2, native-llm only)
 
-# LLM - native llama.cpp bindings (CPU by default, CUDA optional)
-llama-cpp-2 = "0.1"
+# LLM - native llama.cpp (optional; when disabled, app uses Ollama over HTTP)
+llama-cpp-2 = { version = "0.1", optional = true }
+
+# HTTP client for Ollama / remote LLM (no compile of llama.cpp)
+reqwest = { version = "0.12", features = ["json", "stream"], optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }
 
 # HuggingFace Hub for model downloads
 hf-hub = { version = "0.4", default-features = false, features = ["ureq", "rustls-tls"] }
@@ -48,15 +53,24 @@ nvml-wrapper = { version = "0.11", optional = true }
 # ort = "2.0"
 
 [features]
-default = ["custom-protocol", "embeddings", "cuda"]
+default = ["custom-protocol", "embeddings", "ollama"]
 custom-protocol = ["tauri/custom-protocol"]
 
 # Embeddings for semantic search / RAG (requires glibc 2.38+ / Ubuntu 24.04+)
 embeddings = ["dep:fastembed"]
 
-# CUDA acceleration (requires CUDA toolkit at build and runtime)
-# Local build without CUDA: cargo build --no-default-features --features "custom-protocol,embeddings"
-cuda = ["llama-cpp-2/cuda", "dep:nvml-wrapper"]
+# Ollama over HTTP (default): no LLM in binary, supports Vision models
+ollama = ["dep:reqwest", "dep:futures-util"]
+
+# Native llama.cpp in binary (optional; long build, no Vision in this build)
+# Full build with native: cargo build --no-default-features --features "custom-protocol,embeddings,ollama,native-llm,cuda"
+native-llm = ["dep:llama-cpp-2", "ollama"]
+
+# CUDA for native-llm only (requires CUDA toolkit at build and runtime)
+cuda = ["native-llm", "llama-cpp-2/cuda", "dep:nvml-wrapper", "nvml-wrapper"]
+
+# NVML for GPU name/VRAM (with native-llm or cuda)
+nvml-wrapper = ["dep:nvml-wrapper"]
 
 [dev-dependencies]
 tempfile = "3.10"  # For creating temp directories in tests

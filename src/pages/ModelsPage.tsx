@@ -1,23 +1,29 @@
 import { useEffect, useState } from 'react'
-import { Box, Check, Loader2, Plus, Trash2, FolderOpen, FileSearch, Download, Cloud } from 'lucide-react'
+import { Box, Check, Loader2, Plus, Trash2, FolderOpen, FileSearch, Download, Cloud, Link2 } from 'lucide-react'
 import { useStore } from '../store'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ModelBrowserModal } from '../components/ModelBrowserModal'
 import clsx from 'clsx'
 
 export function ModelsPage() {
-  const { 
-    models, 
-    currentModel, 
+  const {
+    models,
+    currentModel,
     isModelLoading,
-    loadModels, 
+    settings,
+    loadModels,
     addModelPath,
     removeModelPath,
-    loadModel, 
-    unloadModel 
+    selectModel,
+    loadModel,
+    unloadModel,
   } = useStore()
 
+  const isOllama = (settings.llmBackend || 'ollama') === 'ollama'
+  const isCustom = (settings.llmBackend || '') === 'custom'
+
   const [loadingModel, setLoadingModel] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [newPath, setNewPath] = useState('')
   const [pathError, setPathError] = useState<string | null>(null)
   const [showBrowser, setShowBrowser] = useState(false)
@@ -68,10 +74,13 @@ export function ModelsPage() {
   }
 
   const handleLoadModel = async (path: string) => {
+    setLoadError(null)
     setLoadingModel(path)
     try {
       await loadModel(path)
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setLoadError(msg)
       console.error('Failed to load model:', e)
     } finally {
       setLoadingModel(null)
@@ -84,13 +93,80 @@ export function ModelsPage() {
         <div>
           <h2 className="text-xl font-bold text-neon-cyan">📦 Модели</h2>
           <p className="text-xs text-gray-500">
-            Добавьте GGUF-модели через обзор файлов или вручную
+            {isOllama
+              ? 'Модели с сервера Ollama (в т.ч. Vision: llava, qwen2-vl). Обновите список ниже.'
+              : isCustom
+                ? 'Vision без Ollama: укажите URL и модель в Настройках (Custom). Запустите llama-server с --mmproj или Llamafile.'
+                : 'Добавьте GGUF-модели через обзор файлов или вручную'}
           </p>
         </div>
+        {(isOllama || isCustom) && (
+          <button
+            onClick={() => loadModels()}
+            className="px-4 py-2 rounded-lg border border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10 text-sm"
+          >
+            {isCustom ? 'Обновить' : 'Обновить список'}
+          </button>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Download from HuggingFace */}
+        {loadError && (
+          <div className="p-4 rounded-xl border border-red-500/50 bg-red-500/10 text-red-400 text-sm">
+            <strong>Ошибка загрузки:</strong> {loadError}
+            <p className="mt-1 text-gray-400 text-xs">
+              Vision-модели (Llama-3.2-Vision и т.п.) в этой версии не поддерживаются. Используйте текстовые GGUF (Qwen, Phi, TinyLlama).
+            </p>
+            <button
+              onClick={() => setLoadError(null)}
+              className="mt-2 text-xs underline hover:no-underline"
+            >
+              Закрыть
+            </button>
+          </div>
+        )}
+
+        {/* Current model (selected for chat) */}
+        {currentModel && (
+          <section className="p-4 rounded-xl border-2 border-neon-cyan/50 bg-neon-cyan/5">
+            <h3 className="text-sm font-bold text-neon-cyan mb-2 flex items-center gap-2">
+              <Link2 size={18} />
+              Модель для чата
+            </h3>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-medium text-white truncate max-w-md" title={currentModel.path}>
+                {currentModel.name}
+              </span>
+              <span className={clsx(
+                'px-2 py-0.5 rounded-full text-xs font-medium',
+                currentModel.isLoaded
+                  ? 'bg-neon-green/20 text-neon-green'
+                  : 'bg-gray-600/50 text-gray-400'
+              )}>
+                {currentModel.isLoaded ? 'В памяти' : 'Только выбрана'}
+              </span>
+              {currentModel.isLoaded ? (
+                <button
+                  onClick={unloadModel}
+                  className="px-3 py-1.5 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 text-sm"
+                >
+                  Выгрузить
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleLoadModel(currentModel.path)}
+                  disabled={isModelLoading}
+                  className="px-3 py-1.5 rounded-lg border border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10 text-sm disabled:opacity-50"
+                >
+                  {isModelLoading ? 'Загрузка...' : 'Загрузить'}
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Download from HuggingFace (native only) */}
+        {!isOllama && !isCustom && (
         <section className="p-4 rounded-xl border border-neon-magenta/30 bg-neon-magenta/5">
           <h3 className="text-sm font-bold text-neon-magenta mb-3 flex items-center gap-2">
             <Cloud size={18} />
@@ -107,8 +183,10 @@ export function ModelsPage() {
             Qwen, Llama, Mistral, DeepSeek и другие GGUF модели
           </p>
         </section>
+        )}
 
-        {/* Add model - File picker */}
+        {/* Add model - File picker (native only) */}
+        {!isOllama && !isCustom && (
         <section className="p-4 rounded-xl border border-neon-cyan/30 bg-neon-cyan/5">
           <h3 className="text-sm font-bold text-neon-cyan mb-3 flex items-center gap-2">
             <FolderOpen size={18} />
@@ -144,22 +222,28 @@ export function ModelsPage() {
           </div>
           {pathError && <p className="text-red-400 text-sm mt-2">{pathError}</p>}
         </section>
+        )}
 
         {/* Model list */}
         {models.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Box size={64} className="text-gray-600 mb-4" />
             <h3 className="text-lg font-bold text-gray-400 mb-2">
-              Нет добавленных моделей
+              {isOllama ? 'Нет моделей Ollama' : isCustom ? 'Нет модели для Custom' : 'Нет добавленных моделей'}
             </h3>
             <p className="text-gray-500 max-w-md">
-              Нажмите "Обзор файлов" чтобы выбрать GGUF модель
+              {isOllama
+                ? 'Запустите Ollama и нажмите "Обновить список", или выберите бэкенд Native в настройках'
+                : isCustom
+                  ? 'В Настройках укажите Custom URL и имя модели, затем нажмите "Обновить"'
+                  : 'Нажмите "Обзор файлов" чтобы выбрать GGUF модель'}
             </p>
           </div>
         ) : (
           <div className="grid gap-4">
             {models.map((model) => {
-              const isLoaded = currentModel?.path === model.path
+              const isSelected = currentModel?.path === model.path
+              const isLoaded = isSelected && currentModel?.isLoaded
               const isLoading = loadingModel === model.path
 
               return (
@@ -167,24 +251,31 @@ export function ModelsPage() {
                   key={model.path}
                   className={clsx(
                     'p-4 rounded-xl border transition-all',
-                    isLoaded
-                      ? 'bg-neon-green/10 border-neon-green/50 glow-green'
-                      : 'bg-cyber-surface border-cyber-border hover:border-neon-cyan/30'
+                    isLoaded && 'bg-neon-green/10 border-neon-green/50',
+                    isSelected && !isLoaded && 'bg-neon-cyan/5 border-neon-cyan/40',
+                    !isSelected && 'bg-cyber-surface border-cyber-border hover:border-neon-cyan/30'
                   )}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h3 className={clsx(
                           'font-bold truncate',
-                          isLoaded ? 'text-neon-green' : 'text-white'
+                          isLoaded && 'text-neon-green',
+                          isSelected && !isLoaded && 'text-neon-cyan',
+                          !isSelected && 'text-white'
                         )}>
                           {model.name}
                         </h3>
                         {isLoaded && (
                           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-neon-green/20 text-neon-green text-xs shrink-0">
                             <Check size={12} />
-                            Загружена
+                            В памяти
+                          </span>
+                        )}
+                        {isSelected && !isLoaded && (
+                          <span className="px-2 py-0.5 rounded-full bg-neon-cyan/20 text-neon-cyan text-xs shrink-0">
+                            Выбрана
                           </span>
                         )}
                       </div>
@@ -193,11 +284,24 @@ export function ModelsPage() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                      <button
+                        onClick={() => selectModel(model.path)}
+                        className={clsx(
+                          'px-3 py-2 rounded-lg border text-sm flex items-center gap-1.5',
+                          isSelected
+                            ? 'border-neon-cyan/60 text-neon-cyan bg-neon-cyan/10'
+                            : 'border-cyber-border text-gray-400 hover:border-neon-cyan/50 hover:text-neon-cyan'
+                        )}
+                        title="Подключить к чату (без загрузки в память)"
+                      >
+                        <Link2 size={14} />
+                        Выбрать
+                      </button>
                       {isLoaded ? (
                         <button
                           onClick={unloadModel}
-                          className="px-4 py-2 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10"
+                          className="px-3 py-2 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 text-sm"
                         >
                           Выгрузить
                         </button>
@@ -206,15 +310,15 @@ export function ModelsPage() {
                           onClick={() => handleLoadModel(model.path)}
                           disabled={isLoading || isModelLoading}
                           className={clsx(
-                            'px-4 py-2 rounded-lg border flex items-center gap-2',
+                            'px-3 py-2 rounded-lg border flex items-center gap-2 text-sm',
                             isLoading || isModelLoading
                               ? 'border-gray-600 text-gray-500 cursor-not-allowed'
-                              : 'border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10'
+                              : 'border-neon-green/50 text-neon-green hover:bg-neon-green/10'
                           )}
                         >
                           {isLoading ? (
                             <>
-                              <Loader2 size={16} className="animate-spin" />
+                              <Loader2 size={14} className="animate-spin" />
                               Загрузка...
                             </>
                           ) : (
@@ -222,13 +326,15 @@ export function ModelsPage() {
                           )}
                         </button>
                       )}
-                      <button
-                        onClick={() => removeModelPath(model.path)}
-                        className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
-                        title="Удалить путь"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      {!isOllama && !isCustom && (
+                        <button
+                          onClick={() => removeModelPath(model.path)}
+                          className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
+                          title="Удалить из списка"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

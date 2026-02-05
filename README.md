@@ -80,9 +80,16 @@ npm install
 # Run in development mode
 npm run tauri:dev
 
-# Build release
+# Build release (CPU+CUDA when CUDA toolkit is installed)
 npm run tauri:build
+
+# Build CPU-only (no CUDA toolkit required, e.g. for CI or machines without GPU)
+npm run tauri:build:cpu
 ```
+
+**Build variants:**
+- **`npm run tauri:build`** — full build with CPU+CUDA support. Requires [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) **installed by the user** at build time if you want CUDA in the binary; otherwise use `tauri:build:cpu`.
+- **`npm run tauri:build:cpu`** — CPU-only build (no CUDA). Use when CUDA Toolkit is not installed or for CI.
 
 ### Linux (Ubuntu/Debian)
 
@@ -95,10 +102,13 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget \
 
 Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with "Desktop development with C++".
 
-## 🖥️ CUDA / GPU
+## 🖥️ CPU / CUDA
 
-- **Indicator:** The sidebar shows **CUDA** (green) or **CPU** (yellow). Status comes from `llama.cpp`’s `llama_supports_gpu_offload()` at startup (real detection when built with the `cuda` feature and NVIDIA drivers).
-- **One model at a time:** Only one model is loaded at a time; switching models unloads the current one first. Concurrent load requests are serialized to avoid crashes.
+Wishmaster supports **CPU and CUDA**. To use GPU, the user **installs [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) themselves** (and NVIDIA drivers). The app detects GPU at runtime.
+
+- **Indicator:** The sidebar shows **CUDA** (green) or **CPU** (yellow) from llama.cpp at startup.
+
+- **One model at a time:** Only one model is loaded; switching models unloads the current one. Concurrent load requests are serialized to avoid crashes.
 
 ## 🧠 Memory System
 
@@ -267,9 +277,16 @@ npm install
 # Запуск в режиме разработки
 npm run tauri:dev
 
-# Сборка релиза
+# Сборка релиза (CPU+CUDA при установленном CUDA toolkit)
 npm run tauri:build
+
+# Сборка только CPU (без CUDA, например для CI или машин без GPU)
+npm run tauri:build:cpu
 ```
+
+**Варианты сборки:**
+- **`npm run tauri:build`** — полная сборка с поддержкой CPU+CUDA. [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) пользователь устанавливает **сам**, если нужна сборка с CUDA.
+- **`npm run tauri:build:cpu`** — только CPU (без CUDA). Для сборки без CUDA или в CI.
 
 ### Linux (Ubuntu/Debian)
 
@@ -281,6 +298,10 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget \
 ### Windows
 
 Установите [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) с компонентом "Desktop development with C++".
+
+## 🖥️ CPU / CUDA
+
+Wishmaster поддерживает **CPU и CUDA**. Для использования GPU пользователь **сам устанавливает [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)** (и драйверы NVIDIA). Приложение определяет GPU при запуске.
 
 ## 🧠 Система памяти
 

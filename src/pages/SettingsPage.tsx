@@ -114,6 +114,81 @@ export function SettingsPage() {
           </div>
         </section>
 
+        {/* LLM Backend */}
+        <section className="p-4 rounded-xl border border-cyber-border bg-cyber-surface">
+          <h3 className="text-lg font-bold text-neon-cyan mb-4">
+            🔌 LLM бэкенд
+          </h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Ollama — Vision из коробки. Custom — свой сервер (llama-server с --mmproj, Llamafile): Vision без Ollama. Native — встроенный llama.cpp.
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm text-gray-400 block mb-2">Бэкенд</label>
+              <select
+                value={settings.llmBackend || 'ollama'}
+                onChange={(e) => handleSave({ llmBackend: e.target.value })}
+                className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
+              >
+                <option value="ollama">Ollama (HTTP, Vision)</option>
+                <option value="custom">Custom (OpenAI API, Vision без Ollama)</option>
+                <option value="native">Native (llama.cpp)</option>
+              </select>
+            </div>
+            {(settings.llmBackend || 'ollama') === 'custom' && (
+              <>
+                <div>
+                  <label className="text-sm text-gray-400 block mb-2">URL сервера (OpenAI API)</label>
+                  <input
+                    type="text"
+                    value={settings.customLlmUrl || ''}
+                    onChange={(e) => handleSave({ customLlmUrl: e.target.value })}
+                    placeholder="http://127.0.0.1:8080"
+                    className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    llama-server с --mmproj или Llamafile с vision-моделью
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400 block mb-2">Имя модели (как на сервере)</label>
+                  <input
+                    type="text"
+                    value={settings.ollamaModel || ''}
+                    onChange={(e) => handleSave({ ollamaModel: e.target.value })}
+                    placeholder="llava, llama, ..."
+                    className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
+                  />
+                </div>
+              </>
+            )}
+            {(settings.llmBackend || 'ollama') === 'ollama' && (
+              <>
+                <div>
+                  <label className="text-sm text-gray-400 block mb-2">URL Ollama</label>
+                  <input
+                    type="text"
+                    value={settings.ollamaBaseUrl || 'http://localhost:11434'}
+                    onChange={(e) => handleSave({ ollamaBaseUrl: e.target.value })}
+                    placeholder="http://localhost:11434"
+                    className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400 block mb-2">Модель по умолчанию (имя)</label>
+                  <input
+                    type="text"
+                    value={settings.ollamaModel || ''}
+                    onChange={(e) => handleSave({ ollamaModel: e.target.value })}
+                    placeholder="llama3.2, llava, qwen2-vl..."
+                    className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
         {/* System Prompt */}
         <section className="p-4 rounded-xl border border-cyber-border bg-cyber-surface">
           <h3 className="text-lg font-bold text-neon-green mb-4">

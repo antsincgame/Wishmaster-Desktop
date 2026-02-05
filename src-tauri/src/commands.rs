@@ -7,10 +7,29 @@ use crate::database;
 #[cfg(feature = "embeddings")]
 use crate::embeddings;
 use crate::hf_models;
+#[cfg(feature = "native-llm")]
 use crate::llm;
+#[cfg(feature = "ollama")]
+use crate::ollama;
+#[cfg(feature = "ollama")]
+use crate::openai_compat;
 use crate::voice;
 
 static STOP_GENERATION: AtomicBool = AtomicBool::new(false);
+
+/// GPU info (used when native-llm is off; native-llm returns llm::GpuInfo, we map to this for API)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuInfo {
+    pub available: bool,
+    pub backend: String,
+    pub device_name: String,
+    pub vram_total_mb: u64,
+    pub vram_free_mb: u64,
+}
+
+#[cfg(feature = "ollama")]
+static OLLAMA_CURRENT_MODEL: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
 // ==================== Types ====================
 
@@ -34,6 +53,24 @@ pub struct Settings {
     pub model_paths: Vec<String>,
     #[serde(rename = "systemPrompt", default = "default_system_prompt")]
     pub system_prompt: String,
+    /// LLM backend: "ollama", "custom" (OpenAI API, e.g. llama-server with --mmproj), or "native"
+    #[serde(rename = "llmBackend", default = "default_llm_backend")]
+    pub llm_backend: String,
+    #[serde(rename = "ollamaBaseUrl", default = "default_ollama_base_url")]
+    pub ollama_base_url: String,
+    #[serde(rename = "ollamaModel", default)]
+    pub ollama_model: String,
+    /// Custom OpenAI-compatible server URL (when llmBackend == "custom"). Vision without Ollama.
+    #[serde(rename = "customLlmUrl", default)]
+    pub custom_llm_url: String,
+}
+
+fn default_llm_backend() -> String {
+    "ollama".to_string()
+}
+
+fn default_ollama_base_url() -> String {
+    "http://localhost:11434".to_string()
 }
 
 fn default_system_prompt() -> String {
@@ -68,6 +105,10 @@ impl Default for Settings {
             tts_enabled: true,
             model_paths: Vec::new(),
             system_prompt: default_system_prompt(),
+            llm_backend: default_llm_backend(),
+            ollama_base_url: default_ollama_base_url(),
+            ollama_model: String::new(),
+            custom_llm_url: String::new(),
         }
     }
 }
@@ -115,6 +156,9 @@ pub struct HistoryMessage {
     pub content: String,
     #[serde(rename = "isUser")]
     pub is_user: bool,
+    /// Base64-encoded images for Vision models (optional)
+    #[serde(default)]
+    pub images: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,29 +212,91 @@ pub fn remove_model_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn load_model(path: String, context_length: i32) -> Result<(), String> {
-    let path = path;
-    let context_length = context_length as usize;
-    tauri::async_runtime::spawn_blocking(move || llm::load_model(&path, context_length))
-        .await
-        .map_err(|e| format!("Load model task join error: {}", e))?
-        .map_err(|e| e)
+pub async fn load_model(path: String, _context_length: i32) -> Result<(), String> {
+    let settings = database::get_settings().map_err(|e| e.to_string())?;
+    if settings.llm_backend == "ollama" || settings.llm_backend == "custom" {
+        #[cfg(feature = "ollama")]
+        {
+            let path = path.trim().to_string();
+            if path.is_empty() {
+                return Ok(());
+            }
+            if let Ok(mut guard) = OLLAMA_CURRENT_MODEL.lock() {
+                *guard = path;
+            }
+            return Ok(());
+        }
+        #[cfg(not(feature = "ollama"))]
+        return Err("Remote backend not built".to_string());
+    }
+    #[cfg(feature = "native-llm")]
+    {
+        let path = path;
+        let context_length = _context_length as usize;
+        tauri::async_runtime::spawn_blocking(move || llm::load_model(&path, context_length))
+            .await
+            .map_err(|e| format!("Load model task join error: {}", e))?
+            .map_err(|e| e)
+    }
+    #[cfg(not(feature = "native-llm"))]
+    Err("Native LLM not built. Use Ollama backend or build with --features native-llm".to_string())
 }
 
 #[tauri::command]
 pub fn unload_model() -> Result<(), String> {
+    #[cfg(feature = "ollama")]
+    if let Ok(mut guard) = OLLAMA_CURRENT_MODEL.lock() {
+        guard.clear();
+    }
+    #[cfg(feature = "native-llm")]
     llm::unload_model();
     Ok(())
 }
 
 #[tauri::command]
-pub fn get_gpu_info() -> Result<llm::GpuInfo, String> {
-    Ok(llm::get_gpu_info())
+pub fn get_gpu_info() -> Result<GpuInfo, String> {
+    #[cfg(feature = "native-llm")]
+    {
+        let info = llm::get_gpu_info();
+        Ok(GpuInfo {
+            available: info.available,
+            backend: info.backend,
+            device_name: info.device_name,
+            vram_total_mb: info.vram_total_mb,
+            vram_free_mb: info.vram_free_mb,
+        })
+    }
+    #[cfg(not(feature = "native-llm"))]
+    Ok(GpuInfo {
+        available: false,
+        backend: "N/A (Ollama)".to_string(),
+        device_name: String::new(),
+        vram_total_mb: 0,
+        vram_free_mb: 0,
+    })
 }
 
 #[tauri::command]
 pub fn is_gpu_available() -> bool {
-    llm::is_gpu_available()
+    #[cfg(feature = "native-llm")]
+    return llm::is_gpu_available();
+    #[cfg(not(feature = "native-llm"))]
+    false
+}
+
+#[cfg(feature = "ollama")]
+#[tauri::command]
+pub async fn list_ollama_models() -> Result<Vec<String>, String> {
+    let settings = database::get_settings().map_err(|e| e.to_string())?;
+    let base = settings.ollama_base_url.trim();
+    let base: &str = if base.is_empty() { ollama::default_base_url() } else { base };
+    ollama::list_models(base).await
+}
+
+#[cfg(not(feature = "ollama"))]
+#[tauri::command]
+pub async fn list_ollama_models() -> Result<Vec<String>, String> {
+    Err("Ollama backend not built".to_string())
 }
 
 // ==================== Session Commands ====================
@@ -453,11 +559,13 @@ pub fn export_to_file(app: AppHandle, format: String) -> Result<String, String> 
 pub async fn generate(
     app: AppHandle,
     prompt: String,
+    images: Option<Vec<String>>,
     history: Vec<HistoryMessage>,
     temperature: f32,
     max_tokens: i32,
     session_id: i64,
 ) -> Result<(), String> {
+    let images = images.unwrap_or_default();
     STOP_GENERATION.store(false, Ordering::SeqCst);
     
     // Get user's custom system prompt (replace known-bad "similarity comparison" prompt with safe default)
@@ -468,7 +576,39 @@ pub async fn generate(
         settings.system_prompt.clone()
     };
 
-    // Build prompt with ChatML format including MEMORY
+    if settings.llm_backend == "custom" {
+        #[cfg(feature = "ollama")]
+        return generate_via_openai_compat(
+            app,
+            &prompt,
+            &images,
+            &history,
+            &system_prompt,
+            temperature,
+            max_tokens,
+        )
+        .await;
+        #[cfg(not(feature = "ollama"))]
+        return Err("Custom backend not built".to_string());
+    }
+    if settings.llm_backend == "ollama" {
+        #[cfg(feature = "ollama")]
+        return generate_via_ollama(
+            app,
+            &prompt,
+            &images,
+            &history,
+            &system_prompt,
+            temperature,
+            max_tokens,
+            session_id,
+        )
+        .await;
+        #[cfg(not(feature = "ollama"))]
+        return Err("Ollama backend not built".to_string());
+    }
+
+    // Build prompt with ChatML format including MEMORY (native LLM)
     let mut full_prompt = String::from("<|im_start|>system\n");
     full_prompt.push_str(&system_prompt);
     full_prompt.push_str("\nТы помнишь ВСЕ предыдущие разговоры и используешь эту информацию.");
@@ -559,32 +699,198 @@ pub async fn generate(
     full_prompt.push_str(&format!("<|im_start|>user\n{}<|im_end|>\n", prompt));
     full_prompt.push_str("<|im_start|>assistant\n");
     
-    // Generate with streaming
-    let stop_flag = &STOP_GENERATION;
+    // Generate with streaming (native LLM)
+    let _stop_flag = &STOP_GENERATION;
     
-    match llm::generate(&full_prompt, temperature, max_tokens as usize, |token| {
-        if stop_flag.load(Ordering::SeqCst) {
-            return false;
-        }
-        
-        if let Err(e) = app.emit("llm-token", token) {
-            eprintln!("Failed to emit token: {}", e);
-        }
-        true
-    }) {
-        Ok(_) => {
-            if let Err(e) = app.emit("llm-finished", ()) {
-                eprintln!("Failed to emit finished event: {}", e);
+    #[cfg(feature = "native-llm")]
+    let result = {
+        match llm::generate(&full_prompt, temperature, max_tokens as usize, |token| {
+            if _stop_flag.load(Ordering::SeqCst) {
+                return false;
             }
-            Ok(())
-        }
-        Err(e) => {
-            if let Err(emit_err) = app.emit("llm-finished", ()) {
-                eprintln!("Failed to emit finished event: {}", emit_err);
+            if let Err(e) = app.emit("llm-token", token) {
+                eprintln!("Failed to emit token: {}", e);
             }
-            Err(e.to_string())
+            true
+        }) {
+            Ok(_) => {
+                if let Err(e) = app.emit("llm-finished", ()) {
+                    eprintln!("Failed to emit finished event: {}", e);
+                }
+                Ok(())
+            }
+            Err(e) => {
+                if let Err(emit_err) = app.emit("llm-finished", ()) {
+                    eprintln!("Failed to emit finished event: {}", emit_err);
+                }
+                Err(e.to_string())
+            }
         }
+    };
+    #[cfg(not(feature = "native-llm"))]
+    let result = Err("Native LLM not built. Use Ollama or build with --features native-llm".to_string());
+    result
+}
+
+#[cfg(feature = "ollama")]
+async fn generate_via_ollama(
+    app: AppHandle,
+    prompt: &str,
+    prompt_images: &[String],
+    history: &[HistoryMessage],
+    system_prompt: &str,
+    temperature: f32,
+    max_tokens: i32,
+    _session_id: i64,
+) -> Result<(), String> {
+    let settings = database::get_settings().map_err(|e| e.to_string())?;
+    let base = settings.ollama_base_url.trim();
+    let base: &str = if base.is_empty() { ollama::default_base_url() } else { base };
+    let model = OLLAMA_CURRENT_MODEL
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    let model = if model.is_empty() {
+        settings.ollama_model.trim().to_string()
+    } else {
+        model
+    };
+    if model.is_empty() {
+        return Err("Выберите модель Ollama (Модели → Загрузить) или укажите ollamaModel в настройках".to_string());
     }
+
+    // Build messages with images support for Vision models
+    let mut messages: Vec<ollama::OllamaMessage> = history
+        .iter()
+        .map(|m| {
+            if m.images.is_empty() {
+                ollama::OllamaMessage::text(
+                    if m.is_user { "user" } else { "assistant" },
+                    &m.content,
+                )
+            } else {
+                ollama::OllamaMessage::with_images(
+                    if m.is_user { "user" } else { "assistant" },
+                    &m.content,
+                    m.images.clone(),
+                )
+            }
+        })
+        .collect();
+    
+    // Add current prompt with images
+    if prompt_images.is_empty() {
+        messages.push(ollama::OllamaMessage::text("user", prompt));
+    } else {
+        messages.push(ollama::OllamaMessage::with_images("user", prompt, prompt_images.to_vec()));
+    }
+
+    let stop_flag = &STOP_GENERATION;
+    let res = ollama::stream_chat(
+        base,
+        &model,
+        messages,
+        Some(system_prompt),
+        temperature,
+        max_tokens as usize,
+        |token| {
+            if stop_flag.load(Ordering::SeqCst) {
+                return false;
+            }
+            if let Err(e) = app.emit("llm-token", token) {
+                eprintln!("Failed to emit token: {}", e);
+            }
+            true
+        },
+    )
+    .await;
+
+    if let Err(e) = app.emit("llm-finished", ()) {
+        eprintln!("Failed to emit finished: {}", e);
+    }
+    res
+}
+
+#[cfg(feature = "ollama")]
+async fn generate_via_openai_compat(
+    app: AppHandle,
+    prompt: &str,
+    prompt_images: &[String],
+    history: &[HistoryMessage],
+    system_prompt: &str,
+    temperature: f32,
+    max_tokens: i32,
+) -> Result<(), String> {
+    let settings = database::get_settings().map_err(|e| e.to_string())?;
+    let base = settings.custom_llm_url.trim();
+    if base.is_empty() {
+        return Err("Укажите URL сервера (Настройки → Custom URL). Например: http://127.0.0.1:8080 для llama-server с --mmproj (Vision).".to_string());
+    }
+    let model = OLLAMA_CURRENT_MODEL
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    let model = if model.is_empty() {
+        settings.ollama_model.trim().to_string()
+    } else {
+        model
+    };
+    let model = if model.is_empty() {
+        "llama".to_string()
+    } else {
+        model
+    };
+
+    // Build messages with images support for Vision models
+    let mut messages: Vec<openai_compat::OpenAiMessage> = history
+        .iter()
+        .map(|m| {
+            if m.images.is_empty() {
+                openai_compat::OpenAiMessage::text(
+                    if m.is_user { "user" } else { "assistant" },
+                    &m.content,
+                )
+            } else {
+                openai_compat::OpenAiMessage::with_images(
+                    if m.is_user { "user" } else { "assistant" },
+                    &m.content,
+                    m.images.clone(),
+                )
+            }
+        })
+        .collect();
+    
+    // Add current prompt with images
+    if prompt_images.is_empty() {
+        messages.push(openai_compat::OpenAiMessage::text("user", prompt));
+    } else {
+        messages.push(openai_compat::OpenAiMessage::with_images("user", prompt, prompt_images.to_vec()));
+    }
+
+    let stop_flag = &STOP_GENERATION;
+    let res = openai_compat::stream_chat(
+        base,
+        &model,
+        messages,
+        Some(system_prompt),
+        temperature,
+        max_tokens as usize,
+        |token| {
+            if stop_flag.load(Ordering::SeqCst) {
+                return false;
+            }
+            if let Err(e) = app.emit("llm-token", token) {
+                eprintln!("Failed to emit token: {}", e);
+            }
+            true
+        },
+    )
+    .await;
+
+    if let Err(e) = app.emit("llm-finished", ()) {
+        eprintln!("Failed to emit finished: {}", e);
+    }
+    res
 }
 
 #[tauri::command]

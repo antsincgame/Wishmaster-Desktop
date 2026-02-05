@@ -3,6 +3,7 @@ use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
+use llama_cpp_2::LlamaModelLoadError;
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 use once_cell::sync::OnceCell;
@@ -180,6 +181,8 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
 
     // Unload current model first to avoid GPU/memory conflicts when switching models
     unload_model();
+    // Brief pause so GPU/driver can release memory before loading next model (reduces crash on switch)
+    std::thread::sleep(std::time::Duration::from_millis(800));
 
     println!("╔══════════════════════════════════════════╗");
     println!("║          LOADING MODEL                   ║");
@@ -206,8 +209,14 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
     println!("⏳ Loading model to {}...", if gpu_available { "GPU" } else { "CPU" });
     
     // Load model
-    let model = LlamaModel::load_from_file(backend, path, &model_params)
-        .map_err(|e| format!("Failed to load model: {:?}", e))?;
+    let model = LlamaModel::load_from_file(backend, path, &model_params).map_err(|e| {
+        match &e {
+            LlamaModelLoadError::NullResult => {
+                "Vision-модели (Llama-3.2-Vision и т.п.) в этой версии не поддерживаются. Используйте текстовые GGUF (Qwen, Phi, TinyLlama).".to_string()
+            }
+            _ => format!("Failed to load model: {:?}", e),
+        }
+    })?;
     
     // Store model
     let model_holder = MODEL.get_or_init(|| Mutex::new(None));
@@ -321,12 +330,13 @@ where
     // Generate tokens
     let mut n_cur = tokens.len();
     let mut accumulated = String::new();
-    
+    let mut decoder = encoding_rs::UTF_8.new_decoder();
+
     for _ in 0..max_tokens {
         // Get logits for the last token
         let candidates = ctx.candidates_ith(batch.n_tokens() - 1);
         let mut candidates_p = LlamaTokenDataArray::from_iter(candidates, false);
-        
+
         // Sample with temperature
         let new_token = match sample_with_temperature(&mut candidates_p, temperature) {
             Some(token) => token,
@@ -335,15 +345,16 @@ where
                 break;
             }
         };
-        
+
         // Check for EOS
         if model.is_eog_token(new_token) {
             println!("EOS token reached");
             break;
         }
-        
-        // Convert token to string
-        let token_str = model.token_to_str(new_token, llama_cpp_2::model::Special::Tokenize)
+
+        // Convert token to string (token_to_piece with decode_special=true for Tokenize behavior)
+        let token_str = model
+            .token_to_piece(new_token, &mut decoder, true, None)
             .map_err(|e| format!("Token to string error: {:?}", e))?;
         
         accumulated.push_str(&token_str);

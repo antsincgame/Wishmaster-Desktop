@@ -82,6 +82,7 @@ interface AppState {
   loadGpuInfo: () => Promise<void>
   addModelPath: (path: string) => Promise<void>
   removeModelPath: (path: string) => Promise<void>
+  selectModel: (path: string) => void
   loadModel: (path: string) => Promise<void>
   unloadModel: () => Promise<void>
   
@@ -90,7 +91,7 @@ interface AppState {
   selectSession: (id: number) => Promise<void>
   deleteSession: (id: number) => Promise<void>
   
-  sendMessage: (content: string) => Promise<void>
+  sendMessage: (content: string, images?: string[]) => Promise<void>
   stopGeneration: () => void
   appendToken: (token: string) => void
   finishGeneration: () => void
@@ -167,6 +168,10 @@ export const useStore = create<AppState>((set, get) => ({
     ttsEnabled: true,
     modelPaths: [] as string[],
     systemPrompt: 'Ты — Wishmaster, умный диалоговый AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке. Отвечай только содержательным текстом, без процентов, формул сходства и служебных меток.',
+    llmBackend: 'ollama',
+    ollamaBaseUrl: 'http://localhost:11434',
+    ollamaModel: '',
+    customLlmUrl: '',
   },
   // Memory system state
   memories: [],
@@ -190,6 +195,9 @@ export const useStore = create<AppState>((set, get) => ({
     set({ settings })
     try {
       await invoke('save_settings', { settings })
+      if (newSettings.llmBackend !== undefined) {
+        await get().loadModels()
+      }
     } catch (e) {
       console.error('Failed to save settings:', e)
       throw e
@@ -200,14 +208,33 @@ export const useStore = create<AppState>((set, get) => ({
   
   loadModels: async () => {
     try {
-      const paths = await invoke<string[]>('get_model_paths')
-      const models: Model[] = paths.map(p => ({
-        name: p.split('/').pop()?.replace(/\.gguf$/i, '') ?? 'Модель',
-        path: p,
-        size: 0,
-        isLoaded: false,
-      }))
-      set({ models })
+      const backend = get().settings.llmBackend || 'ollama'
+      const currentPath = get().currentModel?.path
+      if (backend === 'ollama') {
+        const names = await invoke<string[]>('list_ollama_models').catch(() => [] as string[])
+        const models: Model[] = names.map(name => ({
+          name,
+          path: name,
+          size: 0,
+          isLoaded: currentPath === name,
+        }))
+        set({ models })
+      } else if (backend === 'custom') {
+        const customModel = get().settings.ollamaModel?.trim() || ''
+        const models: Model[] = customModel
+          ? [{ name: customModel, path: customModel, size: 0, isLoaded: currentPath === customModel }]
+          : []
+        set({ models })
+      } else {
+        const paths = await invoke<string[]>('get_model_paths')
+        const models: Model[] = paths.map(p => ({
+          name: p.split('/').pop()?.replace(/\.gguf$/i, '') ?? 'Модель',
+          path: p,
+          size: 0,
+          isLoaded: currentPath === p,
+        }))
+        set({ models })
+      }
     } catch (e) {
       console.error('Failed to load model paths:', e)
     }
@@ -247,6 +274,17 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  /** Select model for chat without loading into memory (connect only) */
+  selectModel: (path) => {
+    const model = get().models.find(m => m.path === path)
+    if (model) {
+      set({ currentModel: { ...model, isLoaded: false } })
+    } else {
+      const name = path.split('/').pop()?.replace(/\.gguf$/i, '') ?? 'Модель'
+      set({ currentModel: { name, path, size: 0, isLoaded: false } })
+    }
+  },
+
   loadModel: async (path) => {
     set({ isModelLoading: true })
     try {
@@ -255,7 +293,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (model) {
         set({ currentModel: { ...model, isLoaded: true } })
       } else {
-        const name = path.split('/').pop()?.replace('.gguf', '') ?? 'Unknown'
+        const name = path.split('/').pop()?.replace(/\.gguf$/i, '') ?? 'Unknown'
         set({ currentModel: { name, path, size: 0, isLoaded: true } })
       }
     } catch (e) {
@@ -269,7 +307,10 @@ export const useStore = create<AppState>((set, get) => ({
   unloadModel: async () => {
     try {
       await invoke('unload_model')
-      set({ currentModel: null })
+      const current = get().currentModel
+      set({
+        currentModel: current ? { ...current, isLoaded: false } : null,
+      })
     } catch (e) {
       console.error('Failed to unload model:', e)
     }
@@ -326,13 +367,18 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // ==================== Chat (with Memory) ====================
+  // ==================== Chat (with Memory & Vision) ====================
   
-  sendMessage: async (content) => {
+  sendMessage: async (content, images = []) => {
     const { currentSessionId, currentModel, settings, messages } = get()
-    
+
     if (!currentSessionId || !currentModel) {
-      throw new Error('No session or model selected')
+      throw new Error('Нет сессии или модели. Выберите модель в разделе «Модели».')
+    }
+
+    // If model is selected but not loaded, load it first (then send)
+    if (!currentModel.isLoaded) {
+      await get().loadModel(currentModel.path)
     }
 
     const userMsg: Message = {
@@ -340,6 +386,7 @@ export const useStore = create<AppState>((set, get) => ({
       content,
       isUser: true,
       timestamp: Date.now(),
+      images: images.length > 0 ? images : undefined,
     }
     
     set({ 
@@ -349,18 +396,25 @@ export const useStore = create<AppState>((set, get) => ({
     })
 
     try {
-      await invoke('save_message', { 
-        sessionId: currentSessionId, 
-        content, 
-        isUser: true 
+      await invoke('save_message', {
+        sessionId: currentSessionId,
+        content,
+        isUser: true,
       })
+      await get().loadSessions()
 
       // Build prompt with more history (now using memory system)
+      // Include images in history for Vision models
       const history = get().messages.slice(-20) // Increased from 10 to 20
       
       await invoke('generate', {
         prompt: content,
-        history: history.map(m => ({ content: m.content, isUser: m.isUser })),
+        images, // Pass current message images
+        history: history.map(m => ({ 
+          content: m.content, 
+          isUser: m.isUser,
+          images: m.images || [],
+        })),
         temperature: settings.temperature,
         maxTokens: settings.maxTokens,
         sessionId: currentSessionId, // Pass session ID for memory context
@@ -408,7 +462,9 @@ export const useStore = create<AppState>((set, get) => ({
           sessionId: currentSessionId,
           content: assistantMsg.content,
           isUser: false,
-        }).catch(e => console.error('Failed to save message:', e))
+        })
+          .then(() => get().loadSessions())
+          .catch(e => console.error('Failed to save message:', e))
       }
 
       if (settings.autoSpeak && settings.ttsEnabled) {

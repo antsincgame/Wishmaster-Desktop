@@ -1,4 +1,5 @@
-# Build Wishmaster Desktop for Linux (DEB, RPM) with CUDA and multi-core CPU
+# Build Wishmaster Desktop for Linux (DEB, RPM)
+# Основная сборка: CPU (надёжная). Опциональная: CPU+CUDA для выбора в настройках.
 name: Build Linux
 
 on:
@@ -13,26 +14,13 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Build DEB and RPM on Ubuntu 24.04 (embeddings + CUDA, multi-core in app)
-  build-linux-packages:
-    name: Build Linux DEB/RPM (CUDA)
+  # ==================== ОСНОВНАЯ СБОРКА (CPU) — без зависимости от CUDA ====================
+  build-linux:
+    name: Build Linux (CPU)
     runs-on: ubuntu-24.04
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-
-    - name: Install CUDA Toolkit
-      uses: Jimver/cuda-toolkit@v0.2.17
-      id: cuda-toolkit
-      with:
-        cuda: '12.4.0'
-        method: 'local'
-        # Full toolkit for reliable llama.cpp CUDA compilation
-
-    - name: Show CUDA info
-      run: |
-        echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
-        nvcc --version || true
 
     - name: Install system dependencies
       run: |
@@ -52,13 +40,13 @@ jobs:
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-      
+
     - name: Rust cache
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: src-tauri
         cache-on-failure: true
-        prefix-key: "v0-linux-cuda"
+        prefix-key: "v0-linux-cpu"
 
     - name: Install Node.js
       uses: actions/setup-node@v4
@@ -69,7 +57,6 @@ jobs:
     - name: Install npm dependencies
       run: npm ci
 
-    # ==================== VALIDATION STAGE ====================
     - name: Check Tauri versions sync
       run: npm run check:tauri-versions
 
@@ -82,20 +69,15 @@ jobs:
     - name: Run frontend tests
       run: npm test
 
-    # ==================== BUILD STAGE ====================
     - name: Build frontend
       run: npm run build
 
-    - name: Rust syntax check
+    - name: Rust check (CPU)
       working-directory: src-tauri
-      run: cargo check
-      env:
-        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+      run: cargo check --no-default-features --features "custom-protocol,embeddings"
 
-    - name: Build Tauri DEB and RPM (with CUDA, multi-core in app)
-      run: npx tauri build --bundles deb,rpm
-      env:
-        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+    - name: Build Tauri DEB and RPM (CPU)
+      run: npx tauri build --bundles deb,rpm -- --no-default-features --features custom-protocol,embeddings
 
     - name: List build output
       run: |
@@ -113,5 +95,82 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: wishmaster-linux-rpm
+        path: src-tauri/target/release/bundle/rpm/*.rpm
+        if-no-files-found: warn
+
+  # ==================== ОПЦИОНАЛЬНАЯ СБОРКА (CPU+CUDA) — для выбора в настройках ====================
+  build-linux-cuda:
+    name: Build Linux (CPU+CUDA)
+    runs-on: ubuntu-24.04
+    needs: build-linux
+    continue-on-error: true
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install CUDA Toolkit
+      uses: Jimver/cuda-toolkit@v0.2.17
+      id: cuda-toolkit
+      with:
+        cuda: '12.4.0'
+        method: 'network'
+
+    - name: Show CUDA info
+      run: |
+        echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
+        nvcc --version || true
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev build-essential curl wget file \
+          libxdo-dev libssl-dev libayatana-appindicator3-dev \
+          librsvg2-dev libsqlite3-dev pkg-config
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+        cache-on-failure: true
+        prefix-key: "v0-linux-cuda"
+
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install npm dependencies
+      run: npm ci
+
+    - name: Build frontend
+      run: npm run build
+
+    - name: Rust check (CPU+CUDA)
+      working-directory: src-tauri
+      run: cargo check
+      env:
+        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+
+    - name: Build Tauri DEB and RPM (CPU+CUDA)
+      run: npm run tauri:build
+      env:
+        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+
+    - name: Upload Linux DEB (CPU+CUDA)
+      uses: actions/upload-artifact@v4
+      with:
+        name: wishmaster-linux-deb-cuda
+        path: src-tauri/target/release/bundle/deb/*.deb
+        if-no-files-found: warn
+
+    - name: Upload Linux RPM (CPU+CUDA)
+      uses: actions/upload-artifact@v4
+      with:
+        name: wishmaster-linux-rpm-cuda
         path: src-tauri/target/release/bundle/rpm/*.rpm
         if-no-files-found: warn

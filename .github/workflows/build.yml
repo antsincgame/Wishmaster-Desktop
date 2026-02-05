@@ -1,5 +1,6 @@
-# Build Wishmaster Desktop for Windows with CUDA
-name: Build Windows (CUDA)
+# Build Wishmaster Desktop for Windows
+# Основная сборка: CPU (надёжная). Опциональная: CPU+CUDA для выбора в настройках.
+name: Build Windows
 
 on:
   push:
@@ -13,34 +14,23 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ==================== ОСНОВНАЯ СБОРКА (CPU) — без зависимости от CUDA ====================
   build-windows:
-    name: Build Windows (CUDA)
+    name: Build Windows (CPU)
     runs-on: windows-latest
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Install CUDA Toolkit
-      uses: Jimver/cuda-toolkit@v0.2.17
-      id: cuda-toolkit
-      with:
-        cuda: '12.4.0'
-        method: 'local'
-        # Full toolkit for reliable llama.cpp CUDA compilation
-
-    - name: Show CUDA info
-      run: |
-        echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
-        nvcc --version 2>&1 || echo "nvcc not found, but continuing..."
-
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-      
+
     - name: Rust cache
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: src-tauri
         cache-on-failure: true
+        prefix-key: "v0-windows-cpu"
 
     - name: Install Node.js
       uses: actions/setup-node@v4
@@ -56,7 +46,6 @@ jobs:
     - name: Install npm dependencies
       run: npm ci
 
-    # ==================== VALIDATION STAGE ====================
     - name: Check Tauri versions sync
       run: npm run check:tauri-versions
 
@@ -66,28 +55,22 @@ jobs:
     - name: TypeScript type check
       run: npm run typecheck
 
-    # ==================== BUILD STAGE ====================
-    # Build frontend FIRST (Tauri needs dist/ folder for cargo check)
     - name: Build frontend
       run: npm run build
 
-    - name: Rust syntax check (with CUDA)
+    - name: Rust check (CPU)
       working-directory: src-tauri
-      run: cargo check
-      env:
-        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+      run: cargo check --no-default-features --features "custom-protocol,embeddings"
 
-    - name: Build Tauri bundle (with CUDA)
-      run: npm run tauri:build
-      env:
-        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+    - name: Build Tauri bundle (CPU)
+      run: npm run tauri:build:cpu
 
     - name: List build output
       run: |
         echo "=== Release directory ==="
-        Get-ChildItem -Path src-tauri/target/release -Filter "*.exe" | Select-Object Name, Length
+        Get-ChildItem -Path src-tauri/target/release -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object Name, Length
         echo "=== Bundle directory ==="
-        Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include "*.msi","*.exe" | Select-Object FullName, Length
+        Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include "*.msi","*.exe" -ErrorAction SilentlyContinue | Select-Object FullName, Length
 
     - name: Upload Windows MSI
       uses: actions/upload-artifact@v4
@@ -100,5 +83,79 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: wishmaster-windows-exe
+        path: src-tauri/target/release/bundle/nsis/*.exe
+        if-no-files-found: warn
+
+  # ==================== ОПЦИОНАЛЬНАЯ СБОРКА (CPU+CUDA) — для выбора в настройках ====================
+  build-windows-cuda:
+    name: Build Windows (CPU+CUDA)
+    runs-on: windows-latest
+    needs: build-windows
+    continue-on-error: true
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install CUDA Toolkit
+      uses: Jimver/cuda-toolkit@v0.2.17
+      id: cuda-toolkit
+      with:
+        cuda: '12.4.0'
+        method: 'network'
+
+    - name: Show CUDA info
+      run: |
+        echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
+        nvcc --version 2>&1 || echo "nvcc not found"
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+        cache-on-failure: true
+        prefix-key: "v0-windows-cuda"
+
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install LLVM/Clang
+      uses: KyleMayes/install-llvm-action@v2
+      with:
+        version: "17"
+
+    - name: Install npm dependencies
+      run: npm ci
+
+    - name: Build frontend
+      run: npm run build
+
+    - name: Rust check (CPU+CUDA)
+      working-directory: src-tauri
+      run: cargo check
+      env:
+        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+
+    - name: Build Tauri bundle (CPU+CUDA)
+      run: npm run tauri:build
+      env:
+        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+
+    - name: Upload Windows MSI (CPU+CUDA)
+      uses: actions/upload-artifact@v4
+      with:
+        name: wishmaster-windows-msi-cuda
+        path: src-tauri/target/release/bundle/msi/*.msi
+        if-no-files-found: warn
+
+    - name: Upload Windows EXE (CPU+CUDA)
+      uses: actions/upload-artifact@v4
+      with:
+        name: wishmaster-windows-exe-cuda
         path: src-tauri/target/release/bundle/nsis/*.exe
         if-no-files-found: warn

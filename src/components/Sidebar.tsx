@@ -82,12 +82,23 @@ export function Sidebar() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 pb-2">
-          {sessions.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-4">
-              Нет чатов
-            </p>
-          ) : (
-            sessions.map(session => (
+          {(() => {
+            const sessionsWithMessages = sessions.filter((s) => s.messageCount > 0)
+            const currentSession = sessions.find((s) => s.id === currentSessionId)
+            const showNewChat =
+              currentSession && currentSession.messageCount === 0
+            const displaySessions = [
+              ...(showNewChat ? [{ ...currentSession!, title: 'Новый чат' }] : []),
+              ...sessionsWithMessages,
+            ]
+            if (displaySessions.length === 0) {
+              return (
+                <p className="text-sm text-gray-500 text-center py-4">
+                  Нет чатов
+                </p>
+              )
+            }
+            return displaySessions.map((session) => (
               <div
                 key={session.id}
                 className={clsx(
@@ -111,7 +122,7 @@ export function Sidebar() {
                 </button>
               </div>
             ))
-          )}
+          })()}
         </div>
       </div>
 
@@ -149,13 +160,17 @@ export function Sidebar() {
         </div>
         
         {/* Model Status */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <div className={clsx(
-            'w-2 h-2 rounded-full',
-            currentModel ? 'bg-neon-green animate-pulse' : 'bg-red-500'
+            'w-2 h-2 rounded-full shrink-0',
+            currentModel?.isLoaded && 'bg-neon-green animate-pulse',
+            currentModel && !currentModel.isLoaded && 'bg-neon-cyan',
+            !currentModel && 'bg-red-500'
           )} />
-          <span className="text-xs text-gray-400 truncate">
-            {currentModel ? currentModel.name : 'Модель не загружена'}
+          <span className="text-xs text-gray-400 truncate" title={currentModel?.path}>
+            {currentModel
+              ? `${currentModel.name}${currentModel.isLoaded ? '' : ' (выбрана)'}`
+              : 'Модель не выбрана'}
           </span>
         </div>
       </div>

@@ -151,7 +151,7 @@ pub fn semantic_search(
     min_similarity: f32,
 ) -> Result<Vec<(i64, String, i64, f32)>> {
     // Get all embeddings (for small datasets this is fine, for large use approximate NN)
-    let mut stmt = if let Some(st) = source_type {
+    let mut stmt = if let Some(_st) = source_type {
         conn.prepare(
             "SELECT id, source_type, source_id, vector FROM embeddings WHERE source_type = ?1"
         )?

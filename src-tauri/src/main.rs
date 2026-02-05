@@ -7,7 +7,12 @@ mod database;
 mod embeddings;
 mod errors;
 mod hf_models;
+#[cfg(feature = "native-llm")]
 mod llm;
+#[cfg(feature = "ollama")]
+mod ollama;
+#[cfg(feature = "ollama")]
+mod openai_compat;
 mod logging;
 mod voice;
 
@@ -42,7 +47,8 @@ fn main() {
                 )));
             }
             
-            // Initialize LLM engine
+            // Initialize native LLM engine (only when built with native-llm)
+            #[cfg(feature = "native-llm")]
             llm::init();
             
             // Initialize voice engine
@@ -78,6 +84,7 @@ fn main() {
             commands::unload_model,
             commands::get_gpu_info,
             commands::is_gpu_available,
+            commands::list_ollama_models,
             // Sessions
             commands::get_sessions,
             commands::create_session,
