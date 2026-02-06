@@ -63,6 +63,7 @@ pub struct DownloadProgress {
 }
 
 /// Shared download state for progress tracking
+#[allow(dead_code)] // cancelled field reserved for download cancellation
 pub struct DownloadState {
     pub downloaded: AtomicU64,
     pub total: AtomicU64,
@@ -106,6 +107,7 @@ impl hf_hub::api::Progress for ProgressTracker {
 }
 
 /// Format bytes to human-readable string
+#[allow(dead_code)]
 fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = KB * 1024;

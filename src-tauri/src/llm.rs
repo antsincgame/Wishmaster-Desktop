@@ -212,7 +212,7 @@ pub fn load_model(path: &str, context_length: usize) -> Result<(), String> {
     let model = LlamaModel::load_from_file(backend, path, &model_params).map_err(|e| {
         match &e {
             LlamaModelLoadError::NullResult => {
-                "Vision-модели (Llama-3.2-Vision и т.п.) в этой версии не поддерживаются. Используйте текстовые GGUF (Qwen, Phi, TinyLlama).".to_string()
+                "Не удалось загрузить модель. Убедитесь что файл GGUF корректен и не повреждён.".to_string()
             }
             _ => format!("Failed to load model: {:?}", e),
         }
@@ -556,11 +556,14 @@ mod tests {
 
     #[test]
     fn test_model_name_extraction_windows_path() {
+        // On Linux, Path doesn't parse Windows backslashes as separators
+        // so we split by both '/' and '\' manually
         let path = r"C:\Users\user\models\llama-7b.gguf";
-        let filename = std::path::Path::new(path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown");
+        let filename = path
+            .rsplit(|c| c == '/' || c == '\\')
+            .next()
+            .unwrap_or(path)
+            .trim_end_matches(".gguf");
         
         assert_eq!(filename, "llama-7b");
     }

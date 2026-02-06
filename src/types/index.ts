@@ -11,7 +11,6 @@
 
 /**
  * Represents a single chat message
- * Supports Vision models with optional images
  */
 export interface Message {
   /** Unique message identifier */
@@ -22,25 +21,15 @@ export interface Message {
   isUser: boolean;
   /** Unix timestamp in milliseconds */
   timestamp: number;
-  /** Base64-encoded images for Vision models (optional) */
-  images?: string[];
 }
 
 /**
  * Message with history context (used for generation)
- * Supports Vision models with optional images
  */
 export interface HistoryMessage {
   content: string;
   isUser: boolean;
-  /** Base64-encoded images for Vision models (optional) */
-  images?: string[];
 }
-
-/**
- * Message role type
- */
-export type MessageRole = 'user' | 'assistant' | 'system';
 
 // ==================== SESSION TYPES ====================
 
@@ -264,47 +253,8 @@ export interface Settings {
   modelPaths: string[];
   /** Custom system prompt for LLM */
   systemPrompt: string;
-  /** LLM backend: "ollama" (HTTP, Vision support) or "native" (built-in llama.cpp) */
+  /** LLM backend: always "native" (built-in llama.cpp) */
   llmBackend: string;
-  /** Ollama base URL (e.g. http://localhost:11434) */
-  ollamaBaseUrl: string;
-  /** Default Ollama model name when none selected */
-  ollamaModel: string;
-  /** Custom OpenAI-compatible server URL (Vision without Ollama, e.g. llama-server with --mmproj) */
-  customLlmUrl: string;
-}
-
-// ==================== EXPORT FORMAT TYPES ====================
-
-/**
- * Alpaca format for fine-tuning
- */
-export interface AlpacaEntry {
-  instruction: string;
-  input: string;
-  output: string;
-}
-
-/**
- * ShareGPT conversation format
- */
-export interface ShareGPTConversation {
-  id: string;
-  conversations: Array<{
-    from: 'human' | 'gpt';
-    value: string;
-  }>;
-}
-
-/**
- * Full export data structure
- */
-export interface ExportData {
-  sessions: Session[];
-  messages: GlobalMessage[];
-  memory: MemoryEntry[];
-  persona: UserPersona | null;
-  exportedAt: number;
 }
 
 // ==================== HUGGINGFACE HUB TYPES ====================
@@ -395,24 +345,6 @@ export interface AwqConversionProgress {
   error: string | null;
 }
 
-// ==================== API RESPONSE TYPES ====================
-
-/**
- * Generic API error response
- */
-export interface ApiError {
-  code: string;
-  message: string;
-  details?: string;
-}
-
-/**
- * Result type for API calls
- */
-export type Result<T, E = ApiError> = 
-  | { success: true; data: T }
-  | { success: false; error: E };
-
 // ==================== CONSTANTS ====================
 
 /**
@@ -463,8 +395,5 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsEnabled: true,
   modelPaths: [],
   systemPrompt: 'Ты — Wishmaster, умный диалоговый AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке. Отвечай только содержательным текстом, без процентов, формул сходства и служебных меток.',
-  llmBackend: 'ollama',
-  ollamaBaseUrl: 'http://localhost:11434',
-  ollamaModel: '',
-  customLlmUrl: '',
+  llmBackend: 'native',
 };

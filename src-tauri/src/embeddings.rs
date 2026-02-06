@@ -11,6 +11,7 @@ const EMBEDDING_DIM: usize = 384; // multilingual-e5-small dimension (used in st
 // ==================== Types ====================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)] // Used for deserialization from DB
 pub struct EmbeddingEntry {
     pub id: i64,
     pub source_type: String,      // "message", "memory", "document"
@@ -204,6 +205,7 @@ pub fn semantic_search(
 }
 
 /// Delete embedding
+#[allow(dead_code)] // Utility for future use
 pub fn delete_embedding(conn: &Connection, source_type: &str, source_id: i64) -> Result<()> {
     conn.execute(
         "DELETE FROM embeddings WHERE source_type = ?1 AND source_id = ?2",
@@ -313,6 +315,7 @@ pub fn index_message(conn: &Connection, message_id: i64, content: &str) -> Resul
 }
 
 /// Index a memory entry for semantic search
+#[allow(dead_code)] // Will be used when memory auto-indexing is implemented
 pub fn index_memory(conn: &Connection, memory_id: i64, content: &str) -> Result<(), String> {
     if has_embedding(conn, "memory", memory_id, content).unwrap_or(false) {
         return Ok(());
@@ -327,6 +330,7 @@ pub fn index_memory(conn: &Connection, memory_id: i64, content: &str) -> Result<
 }
 
 /// Find similar messages using semantic search
+#[allow(dead_code)] // Alternative to find_rag_context, kept for future use
 pub fn find_similar_messages(
     conn: &Connection,
     query: &str,

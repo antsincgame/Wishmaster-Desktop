@@ -111,10 +111,6 @@ export const modelApi = {
    */
   isGpuAvailable: () => safeInvoke<boolean>('is_gpu_available', undefined, false),
 
-  /**
-   * List Ollama model names (when backend is Ollama)
-   */
-  listOllamaModels: () => safeInvoke<string[]>('list_ollama_models', undefined, []),
 };
 
 // ==================== SESSION API ====================

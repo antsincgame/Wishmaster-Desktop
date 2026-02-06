@@ -1,14 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Square, Mic, MicOff, Image, X } from 'lucide-react'
+import { Send, Square, Mic, MicOff } from 'lucide-react'
 import { useStore } from '../store'
 import clsx from 'clsx'
-
-/** Maximum number of images per message */
-const MAX_IMAGES = 4
-/** Maximum image size in bytes (5MB) */
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024
-/** Supported image types */
-const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
 /** Silence duration threshold (ms) before auto-stop and send */
 const SILENCE_THRESHOLD_MS = 3000
@@ -56,13 +49,11 @@ const isSpeechRecognitionSupported = () =>
 
 export function ChatInput() {
   const [text, setText] = useState('')
-  const [images, setImages] = useState<string[]>([]) // Base64 encoded images
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null)
   const [interimText, setInterimText] = useState('')
   const [silenceProgress, setSilenceProgress] = useState(0) // 0-100%
   
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const imageInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -92,8 +83,7 @@ export function ChatInput() {
     settings
   } = useStore()
 
-  const canSend = (text.trim() || images.length > 0) && currentModel && !isGenerating
-  const isVisionBackend = settings.llmBackend === 'ollama' || settings.llmBackend === 'custom'
+  const canSend = text.trim() && currentModel && !isGenerating
 
   const showVoiceNotice = useCallback((message: string) => {
     if (voiceNoticeTimeoutRef.current) clearTimeout(voiceNoticeTimeoutRef.current)
@@ -102,46 +92,6 @@ export function ChatInput() {
       setVoiceNotice(null)
       voiceNoticeTimeoutRef.current = null
     }, 5000)
-  }, [])
-
-  /** Handle image file selection */
-  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files) return
-
-    Array.from(files).forEach(file => {
-      if (images.length >= MAX_IMAGES) {
-        showVoiceNotice(`Максимум ${MAX_IMAGES} изображения`)
-        return
-      }
-      if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
-        showVoiceNotice('Поддерживаются только JPEG, PNG, GIF, WebP')
-        return
-      }
-      if (file.size > MAX_IMAGE_SIZE) {
-        showVoiceNotice('Изображение слишком большое (макс. 5MB)')
-        return
-      }
-
-      const reader = new FileReader()
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(',')[1]
-        if (base64) {
-          setImages(prev => [...prev, base64])
-        }
-      }
-      reader.readAsDataURL(file)
-    })
-
-    // Reset input
-    if (imageInputRef.current) {
-      imageInputRef.current.value = ''
-    }
-  }, [images.length, showVoiceNotice])
-
-  /** Remove image by index */
-  const removeImage = useCallback((index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index))
   }, [])
 
   /** Clean up audio analysis resources */
@@ -407,17 +357,14 @@ export function ChatInput() {
     if (!canSend) return
     
     const message = text.trim()
-    const imagesToSend = [...images]
     setText('')
-    setImages([])
     
     try {
-      await sendMessage(message, imagesToSend)
+      await sendMessage(message)
     } catch (e) {
       console.error('Failed to send:', e)
       // Restore on error
       setText(message)
-      setImages(imagesToSend)
     }
   }
 
@@ -466,28 +413,6 @@ export function ChatInput() {
         </p>
       )}
       
-      {/* Image previews */}
-      {images.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-2">
-          {images.map((img, idx) => (
-            <div key={idx} className="relative group">
-              <img
-                src={`data:image/jpeg;base64,${img}`}
-                alt={`Изображение ${idx + 1}`}
-                className="w-20 h-20 object-cover rounded-lg border border-cyber-border"
-              />
-              <button
-                onClick={() => removeImage(idx)}
-                className="absolute -top-2 -right-2 p-1 bg-red-500 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Удалить"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      
       {/* Interim transcription preview */}
       {isRecording && interimText && (
         <p className="mb-3 text-sm text-gray-400 italic bg-cyber-dark/50 rounded-lg px-3 py-2">
@@ -496,15 +421,6 @@ export function ChatInput() {
       )}
       
       <div className="flex items-end gap-3">
-        {/* Hidden file input for images */}
-        <input
-          ref={imageInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/gif,image/webp"
-          multiple
-          onChange={handleImageSelect}
-          className="hidden"
-        />
         {/* Voice input with silence progress */}
         {settings.sttEnabled && (
           <div className="relative">
@@ -539,23 +455,6 @@ export function ChatInput() {
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
             )}
           </div>
-        )}
-
-        {/* Image upload button (only for Vision backends) */}
-        {isVisionBackend && (
-          <button
-            onClick={() => imageInputRef.current?.click()}
-            disabled={images.length >= MAX_IMAGES || !currentModel}
-            className={clsx(
-              'p-3 rounded-xl border transition-all',
-              images.length >= MAX_IMAGES || !currentModel
-                ? 'border-cyber-border text-gray-600 cursor-not-allowed'
-                : 'border-cyber-border text-gray-400 hover:text-neon-magenta hover:border-neon-magenta/50'
-            )}
-            title={`Добавить изображение (${images.length}/${MAX_IMAGES})`}
-          >
-            <Image size={20} />
-          </button>
         )}
 
         {/* Text input */}

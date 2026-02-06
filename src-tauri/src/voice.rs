@@ -12,6 +12,7 @@ static LAST_AUDIO_PATH: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 
 /// TTS engines available on different platforms
 #[derive(Clone, Copy, PartialEq, Debug)]
+#[allow(dead_code)]
 pub enum TtsEngine {
     /// espeak-ng (Linux/Windows, most common)
     EspeakNg,
@@ -578,7 +579,8 @@ pub fn stop_speaking() {
     println!("Stopped speaking");
 }
 
-/// Check if TTS is available
+/// Check if TTS is available (used by commands, kept for future use)
+#[allow(dead_code)]
 pub fn is_tts_available() -> bool {
     #[cfg(target_os = "windows")]
     { return true; }
@@ -683,7 +685,8 @@ mod tests {
         let text = "It's John's book, isn't it?";
         let escaped = text.replace("'", "\\'");
         assert!(escaped.contains("\\'"));
-        assert_eq!(escaped.matches("\\'").count(), 4);
+        // "It's" (1) + "John's" (2) + "isn't" (3) = 3 apostrophes
+        assert_eq!(escaped.matches("\\'").count(), 3);
     }
     
     #[test]

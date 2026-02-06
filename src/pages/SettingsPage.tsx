@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useStore } from '../store'
+import { Cpu, Zap } from 'lucide-react'
 import clsx from 'clsx'
 
 // Constant array - extracted outside component to prevent recreation on each render
@@ -11,20 +12,61 @@ const ACCENT_COLORS = [
   { id: 'purple', label: 'Purple', color: '#bf00ff' },
 ] as const
 
+/** Debounce delay for slider/text inputs to avoid excessive DB writes */
+const DEBOUNCE_MS = 400
+
 export function SettingsPage() {
-  const { settings, saveSettings } = useStore()
+  const { settings, saveSettings, models, currentModel, selectModel, loadModel, unloadModel, loadModels, gpuInfo, loadGpuInfo, isModelLoading } = useStore()
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [localSettings, setLocalSettings] = useState(settings)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Sync local settings when store settings change externally
+  useEffect(() => {
+    setLocalSettings(settings)
+  }, [settings])
+
+  // Load models and GPU info on mount
+  useEffect(() => {
+    loadModels()
+    loadGpuInfo()
+  }, [loadModels, loadGpuInfo])
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
+  /** Immediate save (for toggles, selects) */
   const handleSave = useCallback(async (updates: Parameters<typeof saveSettings>[0]) => {
     setError(null)
+    setLocalSettings(prev => ({ ...prev, ...updates }))
     try {
       await saveSettings(updates)
       setSavedAt(Date.now())
       setTimeout(() => setSavedAt(null), 2500)
-    } catch (e) {
+    } catch {
       setError('Не удалось сохранить настройки')
     }
+  }, [saveSettings])
+
+  /** Debounced save (for sliders, text inputs) */
+  const handleDebouncedSave = useCallback((updates: Parameters<typeof saveSettings>[0]) => {
+    setLocalSettings(prev => ({ ...prev, ...updates }))
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      setError(null)
+      try {
+        await saveSettings(updates)
+        setSavedAt(Date.now())
+        setTimeout(() => setSavedAt(null), 2500)
+      } catch {
+        setError('Не удалось сохранить настройки')
+      }
+    }, DEBOUNCE_MS)
   }, [saveSettings])
 
   return (
@@ -57,14 +99,14 @@ export function SettingsPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm text-gray-400">Температура</label>
-                <span className="text-sm text-neon-cyan">{settings.temperature.toFixed(2)}</span>
+                <span className="text-sm text-neon-cyan">{localSettings.temperature.toFixed(2)}</span>
               </div>
               <input
                 type="range"
                 min="0"
                 max="100"
-                value={settings.temperature * 100}
-                onChange={(e) => handleSave({ temperature: Number(e.target.value) / 100 })}
+                value={localSettings.temperature * 100}
+                onChange={(e) => handleDebouncedSave({ temperature: Number(e.target.value) / 100 })}
                 className="w-full accent-neon-cyan"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -76,15 +118,15 @@ export function SettingsPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm text-gray-400">Макс. токенов</label>
-                <span className="text-sm text-neon-cyan">{settings.maxTokens}</span>
+                <span className="text-sm text-neon-cyan">{localSettings.maxTokens}</span>
               </div>
               <input
                 type="range"
                 min="64"
                 max="4096"
                 step="64"
-                value={settings.maxTokens}
-                onChange={(e) => handleSave({ maxTokens: Number(e.target.value) })}
+                value={localSettings.maxTokens}
+                onChange={(e) => handleDebouncedSave({ maxTokens: Number(e.target.value) })}
                 className="w-full accent-neon-cyan"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -96,15 +138,15 @@ export function SettingsPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm text-gray-400">Длина контекста</label>
-                <span className="text-sm text-neon-cyan">{settings.contextLength}</span>
+                <span className="text-sm text-neon-cyan">{localSettings.contextLength}</span>
               </div>
               <input
                 type="range"
                 min="512"
                 max="8192"
                 step="512"
-                value={settings.contextLength}
-                onChange={(e) => handleSave({ contextLength: Number(e.target.value) })}
+                value={localSettings.contextLength}
+                onChange={(e) => handleDebouncedSave({ contextLength: Number(e.target.value) })}
                 className="w-full accent-neon-cyan"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -114,79 +156,107 @@ export function SettingsPage() {
           </div>
         </section>
 
-        {/* LLM Backend */}
+        {/* LLM Engine + Model Selection */}
         <section className="p-4 rounded-xl border border-cyber-border bg-cyber-surface">
           <h3 className="text-lg font-bold text-neon-cyan mb-4">
-            🔌 LLM бэкенд
+            🧠 Модель
           </h3>
-          <p className="text-xs text-gray-500 mb-3">
-            Ollama — Vision из коробки. Custom — свой сервер (llama-server с --mmproj, Llamafile): Vision без Ollama. Native — встроенный llama.cpp.
-          </p>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm text-gray-400 block mb-2">Бэкенд</label>
-              <select
-                value={settings.llmBackend || 'ollama'}
-                onChange={(e) => handleSave({ llmBackend: e.target.value })}
-                className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
-              >
-                <option value="ollama">Ollama (HTTP, Vision)</option>
-                <option value="custom">Custom (OpenAI API, Vision без Ollama)</option>
-                <option value="native">Native (llama.cpp)</option>
-              </select>
-            </div>
-            {(settings.llmBackend || 'ollama') === 'custom' && (
+
+          {/* GPU/CUDA Status */}
+          <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-cyber-dark border border-cyber-border">
+            {gpuInfo?.available ? (
               <>
-                <div>
-                  <label className="text-sm text-gray-400 block mb-2">URL сервера (OpenAI API)</label>
-                  <input
-                    type="text"
-                    value={settings.customLlmUrl || ''}
-                    onChange={(e) => handleSave({ customLlmUrl: e.target.value })}
-                    placeholder="http://127.0.0.1:8080"
-                    className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    llama-server с --mmproj или Llamafile с vision-моделью
+                <Zap size={20} className="text-neon-green shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-neon-green font-bold">CUDA</span>
+                  {gpuInfo.deviceName && gpuInfo.deviceName !== 'NVIDIA GPU' && (
+                    <span className="text-xs text-gray-400 ml-2">{gpuInfo.deviceName}</span>
+                  )}
+                  {gpuInfo.vramTotalMb > 0 && (
+                    <p className="text-xs text-gray-500">
+                      VRAM: {(gpuInfo.vramFreeMb / 1024).toFixed(1)} / {(gpuInfo.vramTotalMb / 1024).toFixed(1)} GB свободно
+                    </p>
+                  )}
+                </div>
+                <div className="w-2.5 h-2.5 rounded-full bg-neon-green animate-pulse shrink-0" />
+              </>
+            ) : (
+              <>
+                <Cpu size={20} className="text-yellow-500 shrink-0" />
+                <div className="flex-1">
+                  <span className="text-sm text-yellow-500 font-bold">CPU</span>
+                  <p className="text-xs text-gray-500">
+                    Для ускорения соберите с CUDA: --features cuda
                   </p>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-400 block mb-2">Имя модели (как на сервере)</label>
-                  <input
-                    type="text"
-                    value={settings.ollamaModel || ''}
-                    onChange={(e) => handleSave({ ollamaModel: e.target.value })}
-                    placeholder="llava, llama, ..."
-                    className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
-                  />
-                </div>
-              </>
-            )}
-            {(settings.llmBackend || 'ollama') === 'ollama' && (
-              <>
-                <div>
-                  <label className="text-sm text-gray-400 block mb-2">URL Ollama</label>
-                  <input
-                    type="text"
-                    value={settings.ollamaBaseUrl || 'http://localhost:11434'}
-                    onChange={(e) => handleSave({ ollamaBaseUrl: e.target.value })}
-                    placeholder="http://localhost:11434"
-                    className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-gray-400 block mb-2">Модель по умолчанию (имя)</label>
-                  <input
-                    type="text"
-                    value={settings.ollamaModel || ''}
-                    onChange={(e) => handleSave({ ollamaModel: e.target.value })}
-                    placeholder="llama3.2, llava, qwen2-vl..."
-                    className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
-                  />
-                </div>
+                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 shrink-0" />
               </>
             )}
           </div>
+
+          {/* Model selection */}
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm text-gray-400 block mb-2">Активная модель</label>
+              {models.length > 0 ? (
+                <select
+                  value={currentModel?.path || ''}
+                  onChange={(e) => {
+                    const path = e.target.value
+                    if (path) {
+                      selectModel(path)
+                    }
+                  }}
+                  className="w-full px-4 py-2 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-cyan focus:outline-none"
+                >
+                  <option value="">Выберите модель...</option>
+                  {models.map(m => (
+                    <option key={m.path} value={m.path}>
+                      {m.name} {currentModel?.path === m.path && currentModel.isLoaded ? '(загружена)' : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="px-4 py-3 rounded-lg bg-cyber-dark border border-dashed border-cyber-border text-gray-500 text-sm">
+                  Нет моделей. Добавьте GGUF-файл на странице «Модели».
+                </div>
+              )}
+            </div>
+
+            {/* Load/Unload buttons */}
+            {currentModel && (
+              <div className="flex items-center gap-3">
+                <span className={clsx(
+                  'px-2 py-1 rounded-full text-xs font-medium',
+                  currentModel.isLoaded
+                    ? 'bg-neon-green/20 text-neon-green'
+                    : 'bg-gray-600/50 text-gray-400'
+                )}>
+                  {currentModel.isLoaded ? 'В памяти' : 'Не загружена'}
+                </span>
+                {currentModel.isLoaded ? (
+                  <button
+                    onClick={() => unloadModel()}
+                    className="px-3 py-1.5 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 text-sm"
+                  >
+                    Выгрузить
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => loadModel(currentModel.path)}
+                    disabled={isModelLoading}
+                    className="px-3 py-1.5 rounded-lg border border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10 text-sm disabled:opacity-50"
+                  >
+                    {isModelLoading ? 'Загрузка...' : 'Загрузить'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-500 mt-3">
+            Нативный llama.cpp. Добавьте модели GGUF на странице «Модели» или скачайте с HuggingFace.
+          </p>
         </section>
 
         {/* System Prompt */}
@@ -198,15 +268,15 @@ export function SettingsPage() {
             Инструкции для AI, определяющие его поведение и стиль ответов
           </p>
           <textarea
-            value={settings.systemPrompt}
-            onChange={(e) => handleSave({ systemPrompt: e.target.value })}
+            value={localSettings.systemPrompt}
+            onChange={(e) => handleDebouncedSave({ systemPrompt: e.target.value })}
             rows={4}
             placeholder="Опишите, как должен вести себя AI..."
             className="w-full px-4 py-3 rounded-lg bg-cyber-dark border border-cyber-border text-gray-200 focus:border-neon-green focus:outline-none resize-none"
           />
           <div className="flex justify-between items-center mt-2">
             <p className="text-xs text-gray-500">
-              {settings.systemPrompt.length} символов
+              {localSettings.systemPrompt.length} символов
             </p>
             <button
               onClick={() => handleSave({ 
@@ -357,7 +427,7 @@ export function SettingsPage() {
           <div className="text-sm text-gray-500 space-y-2">
             <p><span className="text-neon-cyan">Wishmaster Desktop</span> v1.0.0</p>
             <p>Built with Tauri + Rust + React</p>
-            <p>LLM: llama.cpp • STT: Whisper.cpp • TTS: Coqui XTTS</p>
+            <p>LLM: llama.cpp (CUDA) • STT: Whisper.cpp • TTS: Coqui XTTS</p>
             <p className="pt-2 border-t border-cyber-border mt-2">
               © 2026 Wishmaster Team
             </p>

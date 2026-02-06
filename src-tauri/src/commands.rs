@@ -9,10 +9,6 @@ use crate::embeddings;
 use crate::hf_models;
 #[cfg(feature = "native-llm")]
 use crate::llm;
-#[cfg(feature = "ollama")]
-use crate::ollama;
-#[cfg(feature = "ollama")]
-use crate::openai_compat;
 use crate::voice;
 
 static STOP_GENERATION: AtomicBool = AtomicBool::new(false);
@@ -28,8 +24,8 @@ pub struct GpuInfo {
     pub vram_free_mb: u64,
 }
 
-#[cfg(feature = "ollama")]
-static OLLAMA_CURRENT_MODEL: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+/// Currently selected model name
+static CURRENT_MODEL: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
 // ==================== Types ====================
 
@@ -53,24 +49,13 @@ pub struct Settings {
     pub model_paths: Vec<String>,
     #[serde(rename = "systemPrompt", default = "default_system_prompt")]
     pub system_prompt: String,
-    /// LLM backend: "ollama", "custom" (OpenAI API, e.g. llama-server with --mmproj), or "native"
+    /// LLM backend: always "native" (built-in llama.cpp)
     #[serde(rename = "llmBackend", default = "default_llm_backend")]
     pub llm_backend: String,
-    #[serde(rename = "ollamaBaseUrl", default = "default_ollama_base_url")]
-    pub ollama_base_url: String,
-    #[serde(rename = "ollamaModel", default)]
-    pub ollama_model: String,
-    /// Custom OpenAI-compatible server URL (when llmBackend == "custom"). Vision without Ollama.
-    #[serde(rename = "customLlmUrl", default)]
-    pub custom_llm_url: String,
 }
 
 fn default_llm_backend() -> String {
-    "ollama".to_string()
-}
-
-fn default_ollama_base_url() -> String {
-    "http://localhost:11434".to_string()
+    "native".to_string()
 }
 
 fn default_system_prompt() -> String {
@@ -106,9 +91,6 @@ impl Default for Settings {
             model_paths: Vec::new(),
             system_prompt: default_system_prompt(),
             llm_backend: default_llm_backend(),
-            ollama_base_url: default_ollama_base_url(),
-            ollama_model: String::new(),
-            custom_llm_url: String::new(),
         }
     }
 }
@@ -133,6 +115,7 @@ pub struct Session {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)] // Used by Tauri frontend via JSON serialization
 pub struct Model {
     pub name: String,
     pub path: String,
@@ -156,9 +139,6 @@ pub struct HistoryMessage {
     pub content: String,
     #[serde(rename = "isUser")]
     pub is_user: bool,
-    /// Base64-encoded images for Vision models (optional)
-    #[serde(default)]
-    pub images: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,25 +193,15 @@ pub fn remove_model_path(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn load_model(path: String, _context_length: i32) -> Result<(), String> {
-    let settings = database::get_settings().map_err(|e| e.to_string())?;
-    if settings.llm_backend == "ollama" || settings.llm_backend == "custom" {
-        #[cfg(feature = "ollama")]
-        {
-            let path = path.trim().to_string();
-            if path.is_empty() {
-                return Ok(());
-            }
-            if let Ok(mut guard) = OLLAMA_CURRENT_MODEL.lock() {
-                *guard = path;
-            }
-            return Ok(());
-        }
-        #[cfg(not(feature = "ollama"))]
-        return Err("Remote backend not built".to_string());
+    // Track model name
+    if let Ok(mut guard) = CURRENT_MODEL.lock() {
+        let name = path.split('/').last()
+            .unwrap_or(&path)
+            .replace(".gguf", "");
+        *guard = name;
     }
     #[cfg(feature = "native-llm")]
     {
-        let path = path;
         let context_length = _context_length as usize;
         tauri::async_runtime::spawn_blocking(move || llm::load_model(&path, context_length))
             .await
@@ -239,13 +209,12 @@ pub async fn load_model(path: String, _context_length: i32) -> Result<(), String
             .map_err(|e| e)
     }
     #[cfg(not(feature = "native-llm"))]
-    Err("Native LLM not built. Use Ollama backend or build with --features native-llm".to_string())
+    Err("Native LLM не собран. Соберите с --features native-llm".to_string())
 }
 
 #[tauri::command]
 pub fn unload_model() -> Result<(), String> {
-    #[cfg(feature = "ollama")]
-    if let Ok(mut guard) = OLLAMA_CURRENT_MODEL.lock() {
+    if let Ok(mut guard) = CURRENT_MODEL.lock() {
         guard.clear();
     }
     #[cfg(feature = "native-llm")]
@@ -269,7 +238,7 @@ pub fn get_gpu_info() -> Result<GpuInfo, String> {
     #[cfg(not(feature = "native-llm"))]
     Ok(GpuInfo {
         available: false,
-        backend: "N/A (Ollama)".to_string(),
+        backend: "CPU".to_string(),
         device_name: String::new(),
         vram_total_mb: 0,
         vram_free_mb: 0,
@@ -282,21 +251,6 @@ pub fn is_gpu_available() -> bool {
     return llm::is_gpu_available();
     #[cfg(not(feature = "native-llm"))]
     false
-}
-
-#[cfg(feature = "ollama")]
-#[tauri::command]
-pub async fn list_ollama_models() -> Result<Vec<String>, String> {
-    let settings = database::get_settings().map_err(|e| e.to_string())?;
-    let base = settings.ollama_base_url.trim();
-    let base: &str = if base.is_empty() { ollama::default_base_url() } else { base };
-    ollama::list_models(base).await
-}
-
-#[cfg(not(feature = "ollama"))]
-#[tauri::command]
-pub async fn list_ollama_models() -> Result<Vec<String>, String> {
-    Err("Ollama backend not built".to_string())
 }
 
 // ==================== Session Commands ====================
@@ -412,14 +366,25 @@ pub fn analyze_persona() -> Result<database::UserPersona, String> {
     let total_chars: usize = messages.iter().map(|m| m.len()).sum();
     let avg_length = total_chars as f32 / messages.len() as f32;
     
-    // Detect language
-    let has_cyrillic = messages.iter().any(|m| m.chars().any(|c| c >= 'а' && c <= 'я'));
+    // Detect language (check both lower and uppercase Cyrillic, including ё/Ё)
+    let has_cyrillic = messages.iter().any(|m| m.chars().any(|c| {
+        (c >= 'а' && c <= 'я') || (c >= 'А' && c <= 'Я') || c == 'ё' || c == 'Ё'
+    }));
     let language = if has_cyrillic { "ru" } else { "en" };
     
-    // Detect emoji usage
+    // Detect emoji usage (check common emoji Unicode ranges)
     let emoji_count: usize = messages.iter()
         .flat_map(|m| m.chars())
-        .filter(|c| *c as u32 > 0x1F600)
+        .filter(|c| {
+            let cp = *c as u32;
+            (cp >= 0x1F600 && cp <= 0x1F64F)
+            || (cp >= 0x1F300 && cp <= 0x1F5FF)
+            || (cp >= 0x1F680 && cp <= 0x1F6FF)
+            || (cp >= 0x1F900 && cp <= 0x1F9FF)
+            || (cp >= 0x2600 && cp <= 0x26FF)
+            || (cp >= 0x2700 && cp <= 0x27BF)
+            || (cp >= 0x1FA00 && cp <= 0x1FA6F)
+        })
         .count();
     let emoji_ratio = emoji_count as f32 / messages.len() as f32;
     let emoji_usage = if emoji_ratio < 0.1 { "none" }
@@ -475,7 +440,7 @@ pub fn analyze_persona() -> Result<database::UserPersona, String> {
         writing_style: writing_style.to_string(),
         avg_message_length: avg_length,
         common_phrases: serde_json::to_string(&common_phrases).unwrap_or_else(|_| "[]".to_string()),
-        topics_of_interest: "[]".to_string(), // Would need more sophisticated analysis
+        topics_of_interest: "[]".to_string(),
         language: language.to_string(),
         emoji_usage: emoji_usage.to_string(),
         tone: tone.to_string(),
@@ -553,344 +518,174 @@ pub fn export_to_file(app: AppHandle, format: String) -> Result<String, String> 
     Ok(path.to_string_lossy().to_string())
 }
 
-// ==================== Generation Commands (with MEMORY) ====================
+// ==================== Memory Context Builder ====================
 
-#[tauri::command]
-pub async fn generate(
-    app: AppHandle,
-    prompt: String,
-    images: Option<Vec<String>>,
-    history: Vec<HistoryMessage>,
-    temperature: f32,
-    max_tokens: i32,
-    session_id: i64,
-) -> Result<(), String> {
-    let images = images.unwrap_or_default();
-    STOP_GENERATION.store(false, Ordering::SeqCst);
-    
-    // Get user's custom system prompt (replace known-bad "similarity comparison" prompt with safe default)
-    let settings = database::get_settings().unwrap_or_default();
-    let system_prompt = if is_similarity_comparison_prompt(&settings.system_prompt) {
-        default_system_prompt()
-    } else {
-        settings.system_prompt.clone()
-    };
+/// Build enriched system prompt with memory, RAG context, and persona info.
+/// Used by the native llama.cpp backend.
+fn build_enriched_system_prompt(
+    base_prompt: &str,
+    _prompt: &str,
+    _session_id: i64,
+) -> String {
+    let mut enriched = String::with_capacity(base_prompt.len() + 2048);
+    enriched.push_str(base_prompt);
+    enriched.push_str("\nТы помнишь ВСЕ предыдущие разговоры и используешь эту информацию.");
+    enriched.push_str(" Отвечай только текстом ответа пользователю — без процентов, сходства и метаданных.\n\n");
 
-    if settings.llm_backend == "custom" {
-        #[cfg(feature = "ollama")]
-        return generate_via_openai_compat(
-            app,
-            &prompt,
-            &images,
-            &history,
-            &system_prompt,
-            temperature,
-            max_tokens,
-        )
-        .await;
-        #[cfg(not(feature = "ollama"))]
-        return Err("Custom backend not built".to_string());
-    }
-    if settings.llm_backend == "ollama" {
-        #[cfg(feature = "ollama")]
-        return generate_via_ollama(
-            app,
-            &prompt,
-            &images,
-            &history,
-            &system_prompt,
-            temperature,
-            max_tokens,
-            session_id,
-        )
-        .await;
-        #[cfg(not(feature = "ollama"))]
-        return Err("Ollama backend not built".to_string());
-    }
-
-    // Build prompt with ChatML format including MEMORY (native LLM)
-    let mut full_prompt = String::from("<|im_start|>system\n");
-    full_prompt.push_str(&system_prompt);
-    full_prompt.push_str("\nТы помнишь ВСЕ предыдущие разговоры и используешь эту информацию.");
-    full_prompt.push_str(" Отвечай только текстом ответа пользователю — без процентов, сходства и метаданных.\n\n");
-    
     // Add important memories
     if let Ok(memories) = database::get_top_memories(5) {
         if !memories.is_empty() {
-            full_prompt.push_str("=== ВАЖНЫЕ ФАКТЫ ИЗ ПАМЯТИ ===\n");
+            enriched.push_str("=== ВАЖНЫЕ ФАКТЫ ИЗ ПАМЯТИ ===\n");
             for mem in memories {
-                full_prompt.push_str(&format!("- [{}] {}\n", mem.category, mem.content));
+                enriched.push_str(&format!("- [{}] {}\n", mem.category, mem.content));
             }
-            full_prompt.push_str("\n");
+            enriched.push('\n');
         }
     }
-    
+
     // Add relevant context using SEMANTIC SEARCH (RAG)
     #[cfg(feature = "embeddings")]
     if let Ok(rag_results) = database::with_connection(|conn| {
-        embeddings::find_rag_context(conn, &prompt, 5)
+        embeddings::find_rag_context(conn, _prompt, 5)
     }) {
         if let Ok(results) = rag_results {
             let relevant: Vec<_> = results.iter()
                 .filter(|r| r.similarity > 0.5)
                 .take(3)
                 .collect();
-            
+
             if !relevant.is_empty() {
-                full_prompt.push_str("=== РЕЛЕВАНТНЫЙ КОНТЕКСТ (для справки) ===\n");
+                enriched.push_str("=== РЕЛЕВАНТНЫЙ КОНТЕКСТ (для справки) ===\n");
                 for result in relevant {
                     let source = match result.source_type.as_str() {
                         "memory" => "Память",
                         "message" => "Сообщение",
                         _ => &result.source_type,
                     };
-                    full_prompt.push_str(&format!("[{}] {}\n",
+                    enriched.push_str(&format!("[{}] {}\n",
                         source,
                         result.content.chars().take(200).collect::<String>()));
                 }
-                full_prompt.push_str("\n");
+                enriched.push('\n');
             }
         }
     }
-    
-    // Fallback to keyword search if semantic search didn't find anything
-    let keywords: Vec<&str> = prompt.split_whitespace()
+
+    // Fallback to keyword search
+    let keywords: Vec<&str> = _prompt.split_whitespace()
         .filter(|w| w.len() > 3)
         .take(3)
         .collect();
-    
+
     if !keywords.is_empty() {
         let search_query = keywords.join(" OR ");
         if let Ok(relevant) = database::search_all_messages(&search_query, 3) {
             let other_session_msgs: Vec<_> = relevant.iter()
-                .filter(|m| m.session_id != session_id)
+                .filter(|m| m.session_id != _session_id)
                 .collect();
-            
+
             if !other_session_msgs.is_empty() {
-                full_prompt.push_str("=== КОНТЕКСТ ИЗ ДРУГИХ ЧАТОВ (keyword) ===\n");
+                enriched.push_str("=== КОНТЕКСТ ИЗ ДРУГИХ ЧАТОВ ===\n");
                 for msg in other_session_msgs {
                     let role = if msg.is_user { "Пользователь" } else { "Ассистент" };
-                    full_prompt.push_str(&format!("[{}] {}: {}\n", 
-                        msg.session_title, role, 
+                    enriched.push_str(&format!("[{}] {}: {}\n",
+                        msg.session_title, role,
                         msg.content.chars().take(200).collect::<String>()));
                 }
-                full_prompt.push_str("\n");
+                enriched.push('\n');
             }
         }
     }
-    
+
     // Add persona info if available
     if let Ok(Some(persona)) = database::get_user_persona() {
-        full_prompt.push_str(&format!(
+        enriched.push_str(&format!(
             "=== ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ ===\nСтиль: {}, Тон: {}, Язык: {}\n\n",
             persona.writing_style, persona.tone, persona.language
         ));
     }
-    
+
+    enriched
+}
+
+// ==================== Generation Commands (with MEMORY) ====================
+
+#[tauri::command]
+pub async fn generate(
+    app: AppHandle,
+    prompt: String,
+    history: Vec<HistoryMessage>,
+    temperature: f32,
+    max_tokens: i32,
+    session_id: i64,
+) -> Result<(), String> {
+    STOP_GENERATION.store(false, Ordering::SeqCst);
+
+    // Get user's custom system prompt (replace known-bad "similarity comparison" prompt with safe default)
+    let settings = database::get_settings().unwrap_or_default();
+    let base_system_prompt = if is_similarity_comparison_prompt(&settings.system_prompt) {
+        default_system_prompt()
+    } else {
+        settings.system_prompt.clone()
+    };
+
+    // Build enriched system prompt with memory, RAG, persona (for ALL backends)
+    let system_prompt = build_enriched_system_prompt(
+        &base_system_prompt,
+        &prompt,
+        session_id,
+    );
+
+    // Build prompt with ChatML format (native LLM)
+    let mut full_prompt = String::from("<|im_start|>system\n");
+    full_prompt.push_str(&system_prompt);
     full_prompt.push_str("<|im_end|>\n");
-    
+
     // Add session history
     for msg in history.iter() {
         let role = if msg.is_user { "user" } else { "assistant" };
         full_prompt.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", role, msg.content));
     }
-    
+
     // Current message
     full_prompt.push_str(&format!("<|im_start|>user\n{}<|im_end|>\n", prompt));
     full_prompt.push_str("<|im_start|>assistant\n");
-    
-    // Generate with streaming (native LLM)
-    let _stop_flag = &STOP_GENERATION;
-    
+
+    // Generate with streaming (native LLM) — run in blocking thread to not block async runtime
     #[cfg(feature = "native-llm")]
     let result = {
-        match llm::generate(&full_prompt, temperature, max_tokens as usize, |token| {
-            if _stop_flag.load(Ordering::SeqCst) {
-                return false;
-            }
-            if let Err(e) = app.emit("llm-token", token) {
-                eprintln!("Failed to emit token: {}", e);
-            }
-            true
-        }) {
-            Ok(_) => {
-                if let Err(e) = app.emit("llm-finished", ()) {
-                    eprintln!("Failed to emit finished event: {}", e);
+        let app_handle = app.clone();
+        let max_tokens_usize = max_tokens as usize;
+        tauri::async_runtime::spawn_blocking(move || {
+            match llm::generate(&full_prompt, temperature, max_tokens_usize, |token| {
+                if STOP_GENERATION.load(Ordering::SeqCst) {
+                    return false;
                 }
-                Ok(())
-            }
-            Err(e) => {
-                if let Err(emit_err) = app.emit("llm-finished", ()) {
-                    eprintln!("Failed to emit finished event: {}", emit_err);
+                if let Err(e) = app_handle.emit("llm-token", token) {
+                    eprintln!("Failed to emit token: {}", e);
                 }
-                Err(e.to_string())
+                true
+            }) {
+                Ok(_) => {
+                    if let Err(e) = app_handle.emit("llm-finished", ()) {
+                        eprintln!("Failed to emit finished event: {}", e);
+                    }
+                    Ok(())
+                }
+                Err(e) => {
+                    if let Err(emit_err) = app_handle.emit("llm-finished", ()) {
+                        eprintln!("Failed to emit finished event: {}", emit_err);
+                    }
+                    Err(e.to_string())
+                }
             }
-        }
+        })
+        .await
+        .map_err(|e| format!("Generation task error: {}", e))?
     };
     #[cfg(not(feature = "native-llm"))]
-    let result = Err("Native LLM not built. Use Ollama or build with --features native-llm".to_string());
+    let result = Err("Native LLM не собран. Соберите с --features native-llm".to_string());
     result
-}
-
-#[cfg(feature = "ollama")]
-async fn generate_via_ollama(
-    app: AppHandle,
-    prompt: &str,
-    prompt_images: &[String],
-    history: &[HistoryMessage],
-    system_prompt: &str,
-    temperature: f32,
-    max_tokens: i32,
-    _session_id: i64,
-) -> Result<(), String> {
-    let settings = database::get_settings().map_err(|e| e.to_string())?;
-    let base = settings.ollama_base_url.trim();
-    let base: &str = if base.is_empty() { ollama::default_base_url() } else { base };
-    let model = OLLAMA_CURRENT_MODEL
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or_default();
-    let model = if model.is_empty() {
-        settings.ollama_model.trim().to_string()
-    } else {
-        model
-    };
-    if model.is_empty() {
-        return Err("Выберите модель Ollama (Модели → Загрузить) или укажите ollamaModel в настройках".to_string());
-    }
-
-    // Build messages with images support for Vision models
-    let mut messages: Vec<ollama::OllamaMessage> = history
-        .iter()
-        .map(|m| {
-            if m.images.is_empty() {
-                ollama::OllamaMessage::text(
-                    if m.is_user { "user" } else { "assistant" },
-                    &m.content,
-                )
-            } else {
-                ollama::OllamaMessage::with_images(
-                    if m.is_user { "user" } else { "assistant" },
-                    &m.content,
-                    m.images.clone(),
-                )
-            }
-        })
-        .collect();
-    
-    // Add current prompt with images
-    if prompt_images.is_empty() {
-        messages.push(ollama::OllamaMessage::text("user", prompt));
-    } else {
-        messages.push(ollama::OllamaMessage::with_images("user", prompt, prompt_images.to_vec()));
-    }
-
-    let stop_flag = &STOP_GENERATION;
-    let res = ollama::stream_chat(
-        base,
-        &model,
-        messages,
-        Some(system_prompt),
-        temperature,
-        max_tokens as usize,
-        |token| {
-            if stop_flag.load(Ordering::SeqCst) {
-                return false;
-            }
-            if let Err(e) = app.emit("llm-token", token) {
-                eprintln!("Failed to emit token: {}", e);
-            }
-            true
-        },
-    )
-    .await;
-
-    if let Err(e) = app.emit("llm-finished", ()) {
-        eprintln!("Failed to emit finished: {}", e);
-    }
-    res
-}
-
-#[cfg(feature = "ollama")]
-async fn generate_via_openai_compat(
-    app: AppHandle,
-    prompt: &str,
-    prompt_images: &[String],
-    history: &[HistoryMessage],
-    system_prompt: &str,
-    temperature: f32,
-    max_tokens: i32,
-) -> Result<(), String> {
-    let settings = database::get_settings().map_err(|e| e.to_string())?;
-    let base = settings.custom_llm_url.trim();
-    if base.is_empty() {
-        return Err("Укажите URL сервера (Настройки → Custom URL). Например: http://127.0.0.1:8080 для llama-server с --mmproj (Vision).".to_string());
-    }
-    let model = OLLAMA_CURRENT_MODEL
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or_default();
-    let model = if model.is_empty() {
-        settings.ollama_model.trim().to_string()
-    } else {
-        model
-    };
-    let model = if model.is_empty() {
-        "llama".to_string()
-    } else {
-        model
-    };
-
-    // Build messages with images support for Vision models
-    let mut messages: Vec<openai_compat::OpenAiMessage> = history
-        .iter()
-        .map(|m| {
-            if m.images.is_empty() {
-                openai_compat::OpenAiMessage::text(
-                    if m.is_user { "user" } else { "assistant" },
-                    &m.content,
-                )
-            } else {
-                openai_compat::OpenAiMessage::with_images(
-                    if m.is_user { "user" } else { "assistant" },
-                    &m.content,
-                    m.images.clone(),
-                )
-            }
-        })
-        .collect();
-    
-    // Add current prompt with images
-    if prompt_images.is_empty() {
-        messages.push(openai_compat::OpenAiMessage::text("user", prompt));
-    } else {
-        messages.push(openai_compat::OpenAiMessage::with_images("user", prompt, prompt_images.to_vec()));
-    }
-
-    let stop_flag = &STOP_GENERATION;
-    let res = openai_compat::stream_chat(
-        base,
-        &model,
-        messages,
-        Some(system_prompt),
-        temperature,
-        max_tokens as usize,
-        |token| {
-            if stop_flag.load(Ordering::SeqCst) {
-                return false;
-            }
-            if let Err(e) = app.emit("llm-token", token) {
-                eprintln!("Failed to emit token: {}", e);
-            }
-            true
-        },
-    )
-    .await;
-
-    if let Err(e) = app.emit("llm-finished", ()) {
-        eprintln!("Failed to emit finished: {}", e);
-    }
-    res
 }
 
 #[tauri::command]
@@ -1018,7 +813,6 @@ pub fn find_rag_context(query: String, limit: i32) -> Result<Vec<embeddings::Sea
 #[cfg(not(feature = "embeddings"))]
 #[tauri::command]
 pub fn find_rag_context(_query: String, _limit: i32) -> Result<Vec<SearchResult>, String> {
-    // Return empty results when embeddings feature is disabled
     Ok(vec![])
 }
 
@@ -1119,7 +913,7 @@ pub async fn download_hf_model(
                 downloaded,
                 total,
                 percent,
-                speed: 0, // Could calculate from delta
+                speed: 0,
                 complete: false,
                 error: None,
             };
@@ -1128,7 +922,6 @@ pub async fn download_hf_model(
                 break;
             }
             
-            // Stop if download seems complete
             if total > 0 && downloaded >= total {
                 break;
             }
@@ -1144,7 +937,6 @@ pub async fn download_hf_model(
     
     match result {
         Ok(path) => {
-            // Emit completion
             let progress = hf_models::DownloadProgress {
                 repo_id: repo_id.clone(),
                 filename: filename.clone(),
@@ -1157,7 +949,6 @@ pub async fn download_hf_model(
             };
             let _ = app.emit("hf-download-progress", &progress);
             
-            // Auto-add to model paths
             let path_str = path.to_string_lossy().to_string();
             if let Err(e) = add_model_path(path_str.clone()) {
                 eprintln!("Warning: failed to add model path: {}", e);
@@ -1166,7 +957,6 @@ pub async fn download_hf_model(
             Ok(path_str)
         }
         Err(e) => {
-            // Emit error
             let progress = hf_models::DownloadProgress {
                 repo_id,
                 filename,
@@ -1220,13 +1010,9 @@ pub struct PythonStatus {
 pub async fn check_awq_python(app: AppHandle) -> Result<PythonStatus, String> {
     use std::process::Command;
     
-    // Find Python
     let python_cmd = find_python().ok_or("Python не найден")?;
-    
-    // Get converter script path
     let converter_path = get_converter_script_path(&app)?;
     
-    // Run check command
     let output = Command::new(&python_cmd)
         .arg(&converter_path)
         .arg("--check")
@@ -1251,7 +1037,6 @@ pub async fn install_awq_dependencies(app: AppHandle) -> Result<bool, String> {
     let python_cmd = find_python().ok_or("Python не найден")?;
     let converter_path = get_converter_script_path(&app)?;
     
-    // Run install command
     let output = Command::new(&python_cmd)
         .arg(&converter_path)
         .arg("--install")
@@ -1274,12 +1059,10 @@ pub async fn convert_awq_to_gguf(
     let python_cmd = find_python().ok_or("Python не найден")?;
     let converter_path = get_converter_script_path(&app)?;
     
-    // Prepare output path
     let models_dir = hf_models::get_models_dir()?;
     let safe_name = repo_id.replace('/', "_");
     let output_path = models_dir.join(format!("{}-{}.gguf", safe_name, quant_type.to_lowercase()));
     
-    // Spawn conversion process
     let mut child = Command::new(&python_cmd)
         .arg(&converter_path)
         .arg("--convert")
@@ -1293,18 +1076,13 @@ pub async fn convert_awq_to_gguf(
         .spawn()
         .map_err(|e| format!("Ошибка запуска конвертации: {}", e))?;
     
-    // Read stdout for progress updates
     let stdout = child.stdout.take().ok_or("Не удалось получить stdout")?;
     let reader = BufReader::new(stdout);
     
     for line in reader.lines() {
         if let Ok(line) = line {
-            // Try to parse as JSON progress
             if let Ok(progress) = serde_json::from_str::<AwqConversionProgress>(&line) {
-                // Emit progress event
                 let _ = app.emit("awq-conversion-progress", &progress);
-                
-                // Check for error
                 if let Some(err) = progress.error {
                     return Err(err);
                 }
@@ -1312,7 +1090,6 @@ pub async fn convert_awq_to_gguf(
         }
     }
     
-    // Wait for process to finish
     let status = child.wait()
         .map_err(|e| format!("Ошибка ожидания процесса: {}", e))?;
     
@@ -1320,7 +1097,6 @@ pub async fn convert_awq_to_gguf(
         return Err("Конвертация завершилась с ошибкой".to_string());
     }
     
-    // Add to model paths
     let output_str = output_path.to_string_lossy().to_string();
     add_model_path(output_str.clone())?;
     
@@ -1337,7 +1113,6 @@ pub fn is_awq_model(repo_id: String) -> bool {
 /// Search for GGUF equivalent of an AWQ model
 #[tauri::command]
 pub fn suggest_gguf_alternative(repo_id: String) -> Option<String> {
-    // Simple heuristic: look for similar GGUF repos
     let parts: Vec<&str> = repo_id.split('/').collect();
     if parts.len() != 2 {
         return None;
@@ -1345,15 +1120,12 @@ pub fn suggest_gguf_alternative(repo_id: String) -> Option<String> {
     
     let model_name = parts[1];
     
-    // Common patterns for AWQ → GGUF
     let suggestions = [
-        // If it's an AWQ model, suggest looking for GGUF version
         (model_name.replace("-AWQ", "-GGUF"), "AWQ", "GGUF"),
         (model_name.replace("-awq", "-GGUF"), "awq", "GGUF"),
         (format!("{}-GGUF", model_name.replace("-AWQ", "").replace("-awq", "")), "", "GGUF"),
     ];
     
-    // Return first reasonable suggestion
     for (suggested, _, _) in suggestions {
         if suggested != model_name && suggested.contains("GGUF") {
             return Some(suggested);
@@ -1365,7 +1137,6 @@ pub fn suggest_gguf_alternative(repo_id: String) -> Option<String> {
 
 // Helper: Find Python executable
 fn find_python() -> Option<String> {
-    // Try common Python commands
     let candidates = ["python3", "python", "python3.11", "python3.10", "python3.9"];
     
     for cmd in candidates {
@@ -1379,7 +1150,6 @@ fn find_python() -> Option<String> {
         }
     }
     
-    // On Windows, also try py launcher
     #[cfg(target_os = "windows")]
     {
         if std::process::Command::new("py")
@@ -1398,7 +1168,6 @@ fn find_python() -> Option<String> {
 
 // Helper: Get converter script path
 fn get_converter_script_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    // Try to find in resources
     let resource_path = app.path()
         .resolve("resources/awq_converter.py", tauri::path::BaseDirectory::Resource)
         .map_err(|e| format!("Не удалось найти скрипт конвертера: {}", e))?;
@@ -1407,7 +1176,6 @@ fn get_converter_script_path(app: &AppHandle) -> Result<std::path::PathBuf, Stri
         return Ok(resource_path);
     }
     
-    // Fallback: check in app data directory
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let fallback_path = app_dir.join("awq_converter.py");
     
@@ -1439,6 +1207,7 @@ mod tests {
         assert!(settings.stt_enabled);
         assert!(settings.tts_enabled);
         assert!(settings.model_paths.is_empty());
+        assert_eq!(settings.llm_backend, "native");
     }
 
     #[test]
@@ -1455,7 +1224,6 @@ mod tests {
         let settings = Settings::default();
         let json = serde_json::to_string(&settings).expect("Serialization failed");
         
-        // Check camelCase field names
         assert!(json.contains("\"maxTokens\""));
         assert!(json.contains("\"contextLength\""));
         assert!(json.contains("\"accentColor\""));
@@ -1464,6 +1232,7 @@ mod tests {
         assert!(json.contains("\"ttsEnabled\""));
         assert!(json.contains("\"modelPaths\""));
         assert!(json.contains("\"systemPrompt\""));
+        assert!(json.contains("\"llmBackend\""));
     }
 
     #[test]
@@ -1478,7 +1247,8 @@ mod tests {
             "sttEnabled": false,
             "ttsEnabled": true,
             "modelPaths": ["/path/model.gguf"],
-            "systemPrompt": "Custom prompt"
+            "systemPrompt": "Custom prompt",
+            "llmBackend": "native"
         }"#;
         
         let settings: Settings = serde_json::from_str(json).expect("Deserialization failed");
@@ -1491,6 +1261,7 @@ mod tests {
         assert!(!settings.stt_enabled);
         assert_eq!(settings.model_paths.len(), 1);
         assert_eq!(settings.system_prompt, "Custom prompt");
+        assert_eq!(settings.llm_backend, "native");
     }
 
     // ==================== Message Tests ====================
@@ -1575,7 +1346,6 @@ mod tests {
         ];
         let user_message = "Как дела?";
         
-        // Build prompt as in generate()
         let mut full_prompt = String::from("<|im_start|>system\n");
         full_prompt.push_str(system);
         full_prompt.push_str("\n<|im_end|>\n");
@@ -1588,7 +1358,6 @@ mod tests {
         full_prompt.push_str(&format!("<|im_start|>user\n{}<|im_end|>\n", user_message));
         full_prompt.push_str("<|im_start|>assistant\n");
         
-        // Verify structure
         assert!(full_prompt.starts_with("<|im_start|>system"));
         assert!(full_prompt.contains(system));
         assert!(full_prompt.contains("<|im_start|>user\nПривет<|im_end|>"));
@@ -1662,7 +1431,6 @@ mod tests {
         
         prompt.push_str(&format!("<|im_start|>user\n{}<|im_end|>\n", user_message));
         
-        // Should not contain any history messages
         assert!(!prompt.contains("<|im_start|>assistant\n"));
         assert!(prompt.matches("<|im_start|>user").count() == 1);
     }
@@ -1731,13 +1499,22 @@ mod tests {
         
         let emoji_count: usize = messages.iter()
             .flat_map(|m| m.chars())
-            .filter(|c| *c as u32 > 0x1F600)
+            .filter(|c| {
+                let cp = *c as u32;
+                (cp >= 0x1F600 && cp <= 0x1F64F)
+                || (cp >= 0x1F300 && cp <= 0x1F5FF)
+                || (cp >= 0x1F680 && cp <= 0x1F6FF)
+                || (cp >= 0x1F900 && cp <= 0x1F9FF)
+                || (cp >= 0x2600 && cp <= 0x26FF)
+                || (cp >= 0x2700 && cp <= 0x27BF)
+                || (cp >= 0x1FA00 && cp <= 0x1FA6F)
+            })
             .count();
         
+        // 3 emojis (🎉, 😊, 👋) / 3 messages = 1.0
         let emoji_ratio = emoji_count as f32 / messages.len() as f32;
         
-        // 4 emojis / 3 messages ≈ 1.33
-        assert!(emoji_ratio > 1.0);
+        assert!(emoji_ratio >= 1.0);
     }
 
     #[test]

@@ -9,7 +9,7 @@
 
 - **Текущий поток**: Frontend → `invoke('load_model'|'generate')` → Tauri commands → `llm.rs` (llama-cpp-2) → события `llm-token`, `llm-finished`.
 - **Зависимости**: `Cargo.toml` — `llama-cpp-2` в default, `llm.rs` — нативная загрузка и генерация.
-- **Vision**: Ollama поддерживает vision через OpenAI-совместимый API и свой `/api/chat` (модели llava, qwen2-vl, llama3.2-vision и т.д.).
+- **Бэкенд**: Только нативный llama.cpp, без внешних серверов.
 
 ## Корневая причина (5 почему)
 

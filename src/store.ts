@@ -91,7 +91,7 @@ interface AppState {
   selectSession: (id: number) => Promise<void>
   deleteSession: (id: number) => Promise<void>
   
-  sendMessage: (content: string, images?: string[]) => Promise<void>
+  sendMessage: (content: string) => Promise<void>
   stopGeneration: () => void
   appendToken: (token: string) => void
   finishGeneration: () => void
@@ -168,10 +168,7 @@ export const useStore = create<AppState>((set, get) => ({
     ttsEnabled: true,
     modelPaths: [] as string[],
     systemPrompt: 'Ты — Wishmaster, умный диалоговый AI-ассистент с долговременной памятью. Отвечай кратко и по делу на русском языке. Отвечай только содержательным текстом, без процентов, формул сходства и служебных меток.',
-    llmBackend: 'ollama',
-    ollamaBaseUrl: 'http://localhost:11434',
-    ollamaModel: '',
-    customLlmUrl: '',
+    llmBackend: 'native',
   },
   // Memory system state
   memories: [],
@@ -195,9 +192,6 @@ export const useStore = create<AppState>((set, get) => ({
     set({ settings })
     try {
       await invoke('save_settings', { settings })
-      if (newSettings.llmBackend !== undefined) {
-        await get().loadModels()
-      }
     } catch (e) {
       console.error('Failed to save settings:', e)
       throw e
@@ -208,33 +202,15 @@ export const useStore = create<AppState>((set, get) => ({
   
   loadModels: async () => {
     try {
-      const backend = get().settings.llmBackend || 'ollama'
       const currentPath = get().currentModel?.path
-      if (backend === 'ollama') {
-        const names = await invoke<string[]>('list_ollama_models').catch(() => [] as string[])
-        const models: Model[] = names.map(name => ({
-          name,
-          path: name,
-          size: 0,
-          isLoaded: currentPath === name,
-        }))
-        set({ models })
-      } else if (backend === 'custom') {
-        const customModel = get().settings.ollamaModel?.trim() || ''
-        const models: Model[] = customModel
-          ? [{ name: customModel, path: customModel, size: 0, isLoaded: currentPath === customModel }]
-          : []
-        set({ models })
-      } else {
-        const paths = await invoke<string[]>('get_model_paths')
-        const models: Model[] = paths.map(p => ({
-          name: p.split('/').pop()?.replace(/\.gguf$/i, '') ?? 'Модель',
-          path: p,
-          size: 0,
-          isLoaded: currentPath === p,
-        }))
-        set({ models })
-      }
+      const paths = await invoke<string[]>('get_model_paths')
+      const models: Model[] = paths.map(p => ({
+        name: p.split('/').pop()?.replace(/\.gguf$/i, '') ?? 'Модель',
+        path: p,
+        size: 0,
+        isLoaded: currentPath === p,
+      }))
+      set({ models })
     } catch (e) {
       console.error('Failed to load model paths:', e)
     }
@@ -367,9 +343,9 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // ==================== Chat (with Memory & Vision) ====================
+  // ==================== Chat (with Memory) ====================
   
-  sendMessage: async (content, images = []) => {
+  sendMessage: async (content) => {
     const { currentSessionId, currentModel, settings, messages } = get()
 
     if (!currentSessionId || !currentModel) {
@@ -386,7 +362,6 @@ export const useStore = create<AppState>((set, get) => ({
       content,
       isUser: true,
       timestamp: Date.now(),
-      images: images.length > 0 ? images : undefined,
     }
     
     set({ 
@@ -404,16 +379,15 @@ export const useStore = create<AppState>((set, get) => ({
       await get().loadSessions()
 
       // Build prompt with more history (now using memory system)
-      // Include images in history for Vision models
-      const history = get().messages.slice(-20) // Increased from 10 to 20
-      
+      // IMPORTANT: exclude the message we just added — it will be sent as `prompt`
+      const allMessages = get().messages
+      const history = allMessages.slice(0, -1).slice(-20)
+
       await invoke('generate', {
         prompt: content,
-        images, // Pass current message images
-        history: history.map(m => ({ 
-          content: m.content, 
+        history: history.map(m => ({
+          content: m.content,
           isUser: m.isUser,
-          images: m.images || [],
         })),
         temperature: settings.temperature,
         maxTokens: settings.maxTokens,

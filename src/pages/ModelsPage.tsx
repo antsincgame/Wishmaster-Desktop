@@ -10,7 +10,6 @@ export function ModelsPage() {
     models,
     currentModel,
     isModelLoading,
-    settings,
     loadModels,
     addModelPath,
     removeModelPath,
@@ -18,9 +17,6 @@ export function ModelsPage() {
     loadModel,
     unloadModel,
   } = useStore()
-
-  const isOllama = (settings.llmBackend || 'ollama') === 'ollama'
-  const isCustom = (settings.llmBackend || '') === 'custom'
 
   const [loadingModel, setLoadingModel] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -93,21 +89,9 @@ export function ModelsPage() {
         <div>
           <h2 className="text-xl font-bold text-neon-cyan">📦 Модели</h2>
           <p className="text-xs text-gray-500">
-            {isOllama
-              ? 'Модели с сервера Ollama (в т.ч. Vision: llava, qwen2-vl). Обновите список ниже.'
-              : isCustom
-                ? 'Vision без Ollama: укажите URL и модель в Настройках (Custom). Запустите llama-server с --mmproj или Llamafile.'
-                : 'Добавьте GGUF-модели через обзор файлов или вручную'}
+            Добавьте GGUF-модели через обзор файлов, скачайте с HuggingFace или укажите путь вручную
           </p>
         </div>
-        {(isOllama || isCustom) && (
-          <button
-            onClick={() => loadModels()}
-            className="px-4 py-2 rounded-lg border border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10 text-sm"
-          >
-            {isCustom ? 'Обновить' : 'Обновить список'}
-          </button>
-        )}
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -115,7 +99,7 @@ export function ModelsPage() {
           <div className="p-4 rounded-xl border border-red-500/50 bg-red-500/10 text-red-400 text-sm">
             <strong>Ошибка загрузки:</strong> {loadError}
             <p className="mt-1 text-gray-400 text-xs">
-              Vision-модели (Llama-3.2-Vision и т.п.) в этой версии не поддерживаются. Используйте текстовые GGUF (Qwen, Phi, TinyLlama).
+              Убедитесь что файл модели существует и формат GGUF поддерживается.
             </p>
             <button
               onClick={() => setLoadError(null)}
@@ -165,8 +149,7 @@ export function ModelsPage() {
           </section>
         )}
 
-        {/* Download from HuggingFace (native only) */}
-        {!isOllama && !isCustom && (
+        {/* Download from HuggingFace */}
         <section className="p-4 rounded-xl border border-neon-magenta/30 bg-neon-magenta/5">
           <h3 className="text-sm font-bold text-neon-magenta mb-3 flex items-center gap-2">
             <Cloud size={18} />
@@ -183,10 +166,8 @@ export function ModelsPage() {
             Qwen, Llama, Mistral, DeepSeek и другие GGUF модели
           </p>
         </section>
-        )}
 
-        {/* Add model - File picker (native only) */}
-        {!isOllama && !isCustom && (
+        {/* Add model - File picker */}
         <section className="p-4 rounded-xl border border-neon-cyan/30 bg-neon-cyan/5">
           <h3 className="text-sm font-bold text-neon-cyan mb-3 flex items-center gap-2">
             <FolderOpen size={18} />
@@ -222,21 +203,16 @@ export function ModelsPage() {
           </div>
           {pathError && <p className="text-red-400 text-sm mt-2">{pathError}</p>}
         </section>
-        )}
 
         {/* Model list */}
         {models.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Box size={64} className="text-gray-600 mb-4" />
             <h3 className="text-lg font-bold text-gray-400 mb-2">
-              {isOllama ? 'Нет моделей Ollama' : isCustom ? 'Нет модели для Custom' : 'Нет добавленных моделей'}
+              Нет добавленных моделей
             </h3>
             <p className="text-gray-500 max-w-md">
-              {isOllama
-                ? 'Запустите Ollama и нажмите "Обновить список", или выберите бэкенд Native в настройках'
-                : isCustom
-                  ? 'В Настройках укажите Custom URL и имя модели, затем нажмите "Обновить"'
-                  : 'Нажмите "Обзор файлов" чтобы выбрать GGUF модель'}
+              Нажмите «Обзор файлов» чтобы добавить GGUF модель или скачайте с HuggingFace
             </p>
           </div>
         ) : (
@@ -326,7 +302,6 @@ export function ModelsPage() {
                           )}
                         </button>
                       )}
-                      {!isOllama && !isCustom && (
                         <button
                           onClick={() => removeModelPath(model.path)}
                           className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
@@ -334,7 +309,6 @@ export function ModelsPage() {
                         >
                           <Trash2 size={18} />
                         </button>
-                      )}
                     </div>
                   </div>
                 </div>

@@ -133,9 +133,11 @@ pub fn init(db_path: &Path) -> Result<()> {
         
         -- Indexes for fast search
         CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
-        CREATE INDEX IF NOT EXISTS idx_messages_content ON messages(content);
+        CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category);
         CREATE INDEX IF NOT EXISTS idx_memory_importance ON memory(importance DESC);
+        CREATE INDEX IF NOT EXISTS idx_memory_session ON memory(source_session_id);
+        CREATE INDEX IF NOT EXISTS idx_memory_created ON memory(created_at DESC);
         
         -- Full-text search virtual table
         CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -252,13 +254,16 @@ pub fn get_settings() -> Result<Settings> {
             "ttsEnabled" => settings.tts_enabled = value == "true",
             "modelPaths" => settings.model_paths = serde_json::from_str(&value).unwrap_or_default(),
             "systemPrompt" => settings.system_prompt = value,
-            "llmBackend" => settings.llm_backend = value,
-            "ollamaBaseUrl" => settings.ollama_base_url = value,
-            "ollamaModel" => settings.ollama_model = value,
-            "customLlmUrl" => settings.custom_llm_url = value,
+            // Legacy: migrate any old backend value to "native"
+            "llmBackend" | "ollamaBaseUrl" | "ollamaModel" | "customLlmUrl" | "serverUrl" | "modelName" => {
+                // All legacy keys ignored — backend is always "native" now
+            },
             _ => {}
         }
     }
+
+    // Always force native backend
+    settings.llm_backend = "native".to_string();
     
     Ok(settings)
 }
@@ -278,10 +283,7 @@ pub fn save_settings(settings: &Settings) -> Result<()> {
         ("ttsEnabled", settings.tts_enabled.to_string()),
         ("modelPaths", model_paths_json),
         ("systemPrompt", settings.system_prompt.clone()),
-        ("llmBackend", settings.llm_backend.clone()),
-        ("ollamaBaseUrl", settings.ollama_base_url.clone()),
-        ("ollamaModel", settings.ollama_model.clone()),
-        ("customLlmUrl", settings.custom_llm_url.clone()),
+        ("llmBackend", "native".to_string()),
     ];
     
     for (key, value) in pairs {
@@ -979,6 +981,8 @@ mod tests {
             stt_enabled: false,
             tts_enabled: true,
             model_paths: vec!["/path/to/model.gguf".to_string()],
+            system_prompt: "Test prompt".to_string(),
+            llm_backend: "native".to_string(),
         };
         
         // Test JSON serialization
@@ -990,6 +994,7 @@ mod tests {
         let parsed: Settings = serde_json::from_str(&json).expect("Failed to deserialize");
         assert_eq!(parsed.temperature, 0.8);
         assert_eq!(parsed.theme, "light");
+        assert_eq!(parsed.llm_backend, "native");
     }
 
     #[test]
